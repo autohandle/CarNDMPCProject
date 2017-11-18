@@ -6,6 +6,7 @@
 #include <vector>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
+#include <Eigen/Dense>
 #include "MPC.h"
 #include "json.hpp"
 
@@ -65,7 +66,32 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
   return result;
 }
 
+const Eigen::Affine2d transformMapToCar(const double theCarMapPositionX, const double theCarMapPositionY, const double theCarMapRotation) {
+  const Eigen::Affine2d translate(Eigen::Translation<double,2>(theCarMapPositionX,theCarMapPositionY));
+  const Eigen::Affine2d rotate(Eigen::Rotation2D<double>(3.733));
+  return translate*rotate;
+}
+
+std::array<std::vector<double>*,2> transformMapToCar(const Eigen::Affine2d theTransformation, const vector<double> theMapPositionsX, const vector<double> theMapPositionsY) {
+  assert (theMapPositionsX.size()==theMapPositionsY.size());
+  vector<double> *transformedPositionsX = new vector<double>;
+  vector<double> *transformedPositionsY = new vector<double>;;
+  for (int p=0; p<theMapPositionsX.size(); p++) {
+    Eigen::Vector3d mapPosition(theMapPositionsX[p], theMapPositionsY[p]);
+    Eigen::Vector3d transformedPosition = theTransformation*mapPosition;
+    (*transformedPositionsX).push_back(transformedPosition[0]);
+    (*transformedPositionsY).push_back(transformedPosition[1]);
+  }
+  std::array<std::vector<double>*,2> transformedPositions;
+  transformedPositions[0]=transformedPositionsX;
+  transformedPositions[1]=transformedPositionsY;
+  return transformedPositions;
+}
+
 int main() {
+  
+  std::cout << "mapToCarTransform:" << transformMapToCar(-40., 108., 3.733).matrix() << std::endl;
+  
   uWS::Hub h;
 
   // MPC is initialized here!
@@ -100,6 +126,8 @@ int main() {
           */
           double steer_value;
           double throttle_value;
+          
+          throttle_value=0.1;
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
@@ -110,7 +138,10 @@ int main() {
           //Display the MPC predicted trajectory 
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
-
+          
+          mpc_x_vals.push_back(10.);mpc_x_vals.push_back(20.);mpc_x_vals.push_back(30.);mpc_x_vals.push_back(30.);
+          mpc_y_vals.push_back(0.1);mpc_y_vals.push_back(0.2);mpc_y_vals.push_back(0.3);mpc_y_vals.push_back(0.4);
+          
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
 
@@ -120,6 +151,9 @@ int main() {
           //Display the waypoints/reference line
           vector<double> next_x_vals;
           vector<double> next_y_vals;
+
+          next_x_vals.push_back(0.);next_x_vals.push_back(10.);next_x_vals.push_back(20.);next_x_vals.push_back(30.);
+          next_y_vals.push_back(0.1);next_y_vals.push_back(0.4);next_y_vals.push_back(0.9);next_y_vals.push_back(0.16);
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
