@@ -4,11 +4,15 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <string>
+
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include <Eigen/Dense>
 #include "MPC.h"
 #include "json.hpp"
+#include "assert.h"
+
 
 // for convenience
 using json = nlohmann::json;
@@ -66,32 +70,6 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
   return result;
 }
 
-const Eigen::Affine3d rotate(double ax, double ay, double az) {
-  const Eigen::Affine3d rx = Eigen::Affine3d(Eigen::AngleAxisd(ax, Eigen::Vector3d(1, 0, 0)));
-  const Eigen::Affine3d ry = Eigen::Affine3d(Eigen::AngleAxisd(ay, Eigen::Vector3d(0, 1, 0)));
-  const Eigen::Affine3d rz = Eigen::Affine3d(Eigen::AngleAxisd(az, Eigen::Vector3d(0, 0, 1)));
-  return rz * ry * rx;
-}
-
-const Eigen::Rotation2D<double> rotateZ(double az) {
-  //const Eigen::Affine3d rz = Eigen::Affine3d(Eigen::AngleAxisd(az, Eigen::Vector3d(0, 0, 1)));
-  Eigen::Rotation2D<double> rotate(az);
-  return rotate;
-}
-
-const Eigen::Affine3d rotate(double az) {
-  return rotate(0., 0., az);
-}
-/*
-const Eigen::Affine3d mapToCarTransformation(const double theCarMapPositionX, const double theCarMapPositionY, const double theCarMapRotation) {
-  cout << "theCarMapPositionX:" << theCarMapPositionX << ", theCarMapPositionY:" << theCarMapPositionY << ", theCarMapRotation:" << theCarMapRotation << std::endl;
-  const Eigen::Affine3d translate(Eigen::Translation<double,3>(-theCarMapPositionX,-theCarMapPositionY, 1.));
-  const Eigen::Affine3d rotation=rotate(theCarMapRotation);
-  cout << "translate:" << std::endl << translate.matrix() << " ," << std::endl << "rotation:" << std::endl << rotation.matrix() << std::endl << " ," << std::endl << "rotate*translate:" << std::endl << (rotation*translate).matrix() << std::endl;
-  throw 221;
-  return rotation*translate;
-}
-*/
 const Eigen::Affine2d mapToCarTransformation(const double theCarMapPositionX, const double theCarMapPositionY, const double theCarMapRotation) {
   cout << "theCarMapPositionX:" << theCarMapPositionX << ", theCarMapPositionY:" << theCarMapPositionY << ", theCarMapRotation:" << theCarMapRotation << std::endl;
   const Eigen::Affine2d translation(Eigen::Translation<double,2>(-theCarMapPositionX,-theCarMapPositionY));
@@ -104,11 +82,6 @@ const Eigen::Affine2d mapToCarTransformation(const Eigen::Vector2d theCarMapPosi
   return mapToCarTransformation(theCarMapPosition[0], theCarMapPosition[1], theCarMapRotation);
 }
 
-/*
-const Eigen::Affine3d mapToCarTransformation(const Eigen::Vector2d theCarMapPosition, const double theCarMapRotation) {
-  return mapToCarTransformation(theCarMapPosition[0], theCarMapPosition[1], theCarMapRotation);
-}
-*/
 const Eigen::Vector3d transformMapToCar(const Eigen::Affine2d theTransformationFromMapToCar, const Eigen::Vector3d theMapPosition) {
   return theTransformationFromMapToCar*theMapPosition;
 }
@@ -126,6 +99,47 @@ const vector<Eigen::Vector2d> transformMapToCar(const Eigen::Affine2d theTransfo
     transformedPositions.push_back(transformMapToCar(theTransformationFromMapToCar, theMapPositions[p]));
   }
   return transformedPositions;
+}
+
+const vector<Eigen::Vector2d> transformMapToCar(const double theCarXPosition, const double theCarYPosition, const double theCarRotation, const vector<double> theMapXPositions, const vector<double> theMapYPositions) {
+  assert(theMapXPositions.size() == theMapYPositions.size());
+  vector<Eigen::Vector2d> mapPositions;
+  for (int p=0; p<theMapXPositions.size(); p++) {
+    mapPositions.push_back(Eigen::Vector2d(theMapXPositions[p], theMapYPositions[p]));
+  }
+  const Eigen::Affine2d transformation=mapToCarTransformation(theCarXPosition, theCarYPosition, theCarRotation);
+  return transformMapToCar(transformation, mapPositions);
+}
+
+const vector<double> pullCoordinate(vector<Eigen::Vector2d> thePoints, const int theCoordinate) {
+  vector<double> coordinates;
+  for (int p=0; p<thePoints.size(); p++) {
+    coordinates.push_back(thePoints[p][theCoordinate]);
+  }
+  return coordinates;
+}
+
+const vector<double> pullXCoordinate(vector<Eigen::Vector2d> thePoints) {
+  return pullCoordinate(thePoints,0);
+}
+
+const vector<double> pullYCoordinate(vector<Eigen::Vector2d> thePoints) {
+  return pullCoordinate(thePoints,1);
+}
+
+const string toString(vector<double> theVector) {
+  std::ostringstream oss;
+  
+  if (!theVector.empty())
+  {
+    // Convert all but the last element to avoid a trailing ","
+    std::copy(theVector.begin(), theVector.end()-1,
+              std::ostream_iterator<int>(oss, ","));
+    
+    // Now add the last element with no delimiter
+    oss << theVector.back();
+  }
+  return oss.str();
 }
 
 bool areSame(const double a, const double b, const double epsilon) {
@@ -319,7 +333,7 @@ const int testMappingToCar() {
   return 0;
 }
 
-const bool RUNTESTS = true;
+const bool RUNTESTS = false;
 
 int main() {
   
@@ -389,8 +403,12 @@ int main() {
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          next_x_vals.push_back(0.);next_x_vals.push_back(10.);next_x_vals.push_back(20.);next_x_vals.push_back(30.);
-          next_y_vals.push_back(0.1);next_y_vals.push_back(0.4);next_y_vals.push_back(0.9);next_y_vals.push_back(0.16);
+          const vector<Eigen::Vector2d> nextXYValues=transformMapToCar(px, py, psi, ptsx, ptsy);
+          next_x_vals=pullXCoordinate(nextXYValues);
+          next_y_vals=pullYCoordinate(nextXYValues);
+          cout << "next_x_vals:" << toString(next_x_vals) << std::endl;
+          cout << "next_y_vals:" << toString(next_y_vals) << std::endl;
+          throw 122;
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
