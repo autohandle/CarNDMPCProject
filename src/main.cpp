@@ -73,7 +73,7 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
 const Eigen::Affine2d mapToCarTransformation(const double theCarMapPositionX, const double theCarMapPositionY, const double theCarMapRotation) {
   cout << "theCarMapPositionX:" << theCarMapPositionX << ", theCarMapPositionY:" << theCarMapPositionY << ", theCarMapRotation:" << theCarMapRotation << std::endl;
   const Eigen::Affine2d translation(Eigen::Translation<double,2>(-theCarMapPositionX,-theCarMapPositionY));
-  const Eigen::Affine2d  rotation((Eigen::Rotation2D<double>(theCarMapRotation)));
+  const Eigen::Affine2d  rotation((Eigen::Rotation2D<double>(-theCarMapRotation)));
   cout << "translation:" << std::endl << translation.matrix() << " ," << std::endl << "rotation:" << std::endl << rotation.matrix() << std::endl << " ," << std::endl << "rotation*translation:" << std::endl << (rotation*translation).matrix() << std::endl;
   return rotation*translation;
 }
@@ -134,7 +134,7 @@ const string toString(vector<double> theVector) {
   {
     // Convert all but the last element to avoid a trailing ","
     std::copy(theVector.begin(), theVector.end()-1,
-              std::ostream_iterator<int>(oss, ","));
+              std::ostream_iterator<int>(oss, ", "));
     
     // Now add the last element with no delimiter
     oss << theVector.back();
@@ -378,7 +378,9 @@ int main() {
           double steer_value;
           double throttle_value;
           
+          steer_value=0.;
           throttle_value=0.1;
+          cout << "steer_value:" << steer_value << ", throttle_value:" << throttle_value << std::endl;
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
@@ -403,12 +405,13 @@ int main() {
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
+          cout << "psi:" << psi << " = " << rad2deg(psi) << " degrees, sine:" << sin(psi) << ", cosine:" << cos(psi) << std::endl;
           const vector<Eigen::Vector2d> nextXYValues=transformMapToCar(px, py, psi, ptsx, ptsy);
           next_x_vals=pullXCoordinate(nextXYValues);
           next_y_vals=pullYCoordinate(nextXYValues);
           cout << "next_x_vals:" << toString(next_x_vals) << std::endl;
           cout << "next_y_vals:" << toString(next_y_vals) << std::endl;
-          throw 122;
+          //throw 122;
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
