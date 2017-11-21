@@ -46,6 +46,15 @@ double polyeval(Eigen::VectorXd coeffs, double x) {
   return result;
 }
 
+vector<double> polyeval(Eigen::VectorXd theCoefficients, vector<double> theXValues) {
+  vector<double> yValues;
+  for (int x=0; x<theXValues.size(); x++) {
+    double yValue=polyeval(theCoefficients, theXValues[x]);
+    yValues.push_back(yValue);
+  }
+  return yValues;
+}
+
 // Fit a polynomial.
 // Adapted from
 // https://github.com/JuliaMath/Polynomials.jl/blob/master/src/Polynomials.jl#L676-L716
@@ -68,6 +77,33 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
   auto Q = A.householderQr();
   auto result = Q.solve(yvals);
   return result;
+}
+
+// Eigen::Vector3d v2(v1.data())
+// VectorXcd v3 = VectorXcd::Map(v2.data(), v2.size());
+Eigen::VectorXd polyfit(const vector<double> theXValues, const vector<double> theYValues, const int thePolynomialOrder) {
+  Eigen::VectorXd eigenX = Eigen::VectorXd::Map(theXValues.data(), theXValues.size());
+  Eigen::VectorXd eigenY = Eigen::VectorXd::Map(theYValues.data(), theYValues.size());
+  return polyfit(eigenX, eigenY, thePolynomialOrder);
+}
+
+const double fPrimeOfX(const Eigen::VectorXd thePolynomialCoefficients, const double theValueX) {
+  //const int numberOfCoefficients=sizeof(thePolynomialCoefficients)/sizeof(thePolynomialCoefficients[0]);
+  const int numberOfCoefficients = thePolynomialCoefficients.size();
+  if (numberOfCoefficients > 0) {
+    double valueAtX=thePolynomialCoefficients[1];
+    for (int c=2;c<numberOfCoefficients;c++) {
+      valueAtX+=thePolynomialCoefficients[c]*pow(theValueX,c-1);
+    }
+    //cout << "fPrimeOfX-numberOfCoefficients:" << numberOfCoefficients << ", valueAtX:" << valueAtX << std::endl;
+    return valueAtX;
+  } else {
+    return 0.;
+  }
+}
+
+const double tangentialAngle(const Eigen::VectorXd thePolynomialCoefficients, const double theValueX) {
+  return atan(fPrimeOfX(thePolynomialCoefficients, theValueX));
 }
 
 const Eigen::Affine2d mapToCarTransformation(const double theCarMapPositionX, const double theCarMapPositionY, const double theCarMapRotation) {
@@ -362,11 +398,11 @@ int main() {
         string event = j[0].get<string>();
         if (event == "telemetry") {
           // j[1] is the data JSON object
-          vector<double> ptsx = j[1]["ptsx"];
-          vector<double> ptsy = j[1]["ptsy"];
-          double px = j[1]["x"];
-          double py = j[1]["y"];
-          double psi = j[1]["psi"];
+          vector<double> globalPtsX = j[1]["ptsx"];
+          vector<double> globalPtsY = j[1]["ptsy"];
+          double globalPx = j[1]["x"];
+          double globalPy = j[1]["y"];
+          double globalPsi = j[1]["psi"];
           double v = j[1]["speed"];
 
           /*
@@ -375,12 +411,45 @@ int main() {
           * Both are in between [-1, 1].
           *
           */
-          double steer_value;
-          double throttle_value;
+          const Eigen::VectorXd globalCoeffs = polyfit(globalPtsX, globalPtsY, 1);// polynomial fit for midline of road
+          cout << "globalCoeffs:" << globalCoeffs << std::endl;
+
+          const double globalYDesired=polyeval(globalCoeffs, globalPx);
+          const double cte = globalYDesired-globalPy;// difference between current y and the path y at the current x
+          cout << "yAtCurrentX:" << globalYDesired << ", py:" << globalPy << ", cte:" << cte << std::endl;
+          // TODO: calculate the orientation error
+          //double epsi = ? ;
+          // eψ(t+1)  =  ψ(t)−ψdes(t)+((v(t)/Lf)*δ(t)*dt)
+          //    ψdes(t) is desired orientation angle psi/ψ,
+          //      the desired ψ is the tangent of the path f at t (i.e. f'(t) for path f(t)),
+          //      also called: tangential angle, it can be calcualted as: arctan(f'(x(t))).
+          //      the path f(t) is calculated by polynomial fitting a series of point x,y to get coefficients: c,
+          //      so f'(t) can be calulated from c's, by hand, depending on the degree of the fitted polynomial
+          //
+          //      there should be only 2 coefficients for a 1 degree polynomial: c0 & c1
+          //      therefore f'(t) should be just c1.
+          //double psiDesired = atan(coeffs[1]);
+          const double globalPsiDesired = tangentialAngle(globalCoeffs, globalPx);
+          //cout << "psiDesired:" << psiDesired << ", psiDesiredCalculated:" << psiDesiredCalculated << std::endl;
+          const double epsi = globalPsi-globalPsiDesired;
+          cout << "epsi:" << epsi << std::endl;
           
-          steer_value=0.;
-          throttle_value=0.1;
-          cout << "steer_value:" << steer_value << ", throttle_value:" << throttle_value << std::endl;
+          Eigen::VectorXd state(6);
+          state << globalPx,globalPy,globalPsi,v,cte,epsi;
+          const vector<double> globalSolution = mpc.Solve(state, polyfit(globalPtsX,globalPtsY,3));
+
+          const double sX = globalSolution[0];
+          const double sY = globalSolution[1];
+          const double sPsi = globalSolution[2];
+          const double sV = globalSolution[3];
+          const double sCte = globalSolution[4];
+          const double sEpsi = globalSolution[5];
+          double sSteerValue = globalSolution[6];
+          double sThrottleValue = globalSolution[7];
+          cout << "sSteerValue:" << sSteerValue << ", sThrottleValue:" << sThrottleValue << std::endl;
+
+          const double steer_value=sSteerValue;
+          const double throttle_value=0.1;
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
@@ -388,12 +457,17 @@ int main() {
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle_value;
 
-          //Display the MPC predicted trajectory 
+          cout << "globalPsi:" << globalPsi << " = " << rad2deg(globalPsi) << " degrees, sine:" << sin(globalPsi) << ", cosine:" << cos(globalPsi) << std::endl;
+          const vector<Eigen::Vector2d> nextXYCarValues=transformMapToCar(globalPx, globalPy, globalPsi, globalPtsX, globalPtsY);
+
+          //Display the MPC predicted trajectory
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
           
           mpc_x_vals.push_back(10.);mpc_x_vals.push_back(20.);mpc_x_vals.push_back(30.);mpc_x_vals.push_back(30.);
           mpc_y_vals.push_back(0.1);mpc_y_vals.push_back(0.2);mpc_y_vals.push_back(0.3);mpc_y_vals.push_back(0.4);
+          //mpc_x_vals=pullXCoordinate(nextXYCarValues);
+          //mpc_y_vals=pullYCoordinate(nextXYCarValues);
           
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
@@ -405,10 +479,8 @@ int main() {
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          cout << "psi:" << psi << " = " << rad2deg(psi) << " degrees, sine:" << sin(psi) << ", cosine:" << cos(psi) << std::endl;
-          const vector<Eigen::Vector2d> nextXYValues=transformMapToCar(px, py, psi, ptsx, ptsy);
-          next_x_vals=pullXCoordinate(nextXYValues);
-          next_y_vals=pullYCoordinate(nextXYValues);
+          next_x_vals=pullXCoordinate(nextXYCarValues);
+          next_y_vals=pullYCoordinate(nextXYCarValues);
           cout << "next_x_vals:" << toString(next_x_vals) << std::endl;
           cout << "next_y_vals:" << toString(next_y_vals) << std::endl;
           //throw 122;
