@@ -5,6 +5,7 @@
 #include <thread>
 #include <vector>
 #include <string>
+#include <algorithm>    // std::min
 
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
@@ -58,8 +59,7 @@ vector<double> polyeval(Eigen::VectorXd theCoefficients, vector<double> theXValu
 // Fit a polynomial.
 // Adapted from
 // https://github.com/JuliaMath/Polynomials.jl/blob/master/src/Polynomials.jl#L676-L716
-Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
-                        int order) {
+Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals, int order) {
   assert(xvals.size() == yvals.size());
   assert(order >= 1 && order <= xvals.size() - 1);
   Eigen::MatrixXd A(xvals.size(), order + 1);
@@ -79,12 +79,77 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
   return result;
 }
 
+const string toString(vector<double> theVector) {
+  std::ostringstream oss;
+  
+  if (!theVector.empty())
+  {
+    // Convert all but the last element to avoid a trailing ","
+    std::copy(theVector.begin(), theVector.end()-1,
+              std::ostream_iterator<int>(oss, ", "));
+    
+    // Now add the last element with no delimiter
+    oss << theVector.back();
+  }
+  return oss.str();
+}
+
 // Eigen::Vector3d v2(v1.data())
 // VectorXcd v3 = VectorXcd::Map(v2.data(), v2.size());
 Eigen::VectorXd polyfit(const vector<double> theXValues, const vector<double> theYValues, const int thePolynomialOrder) {
   Eigen::VectorXd eigenX = Eigen::VectorXd::Map(theXValues.data(), theXValues.size());
   Eigen::VectorXd eigenY = Eigen::VectorXd::Map(theYValues.data(), theYValues.size());
+  cout  << "eigenX:" << std::endl << eigenX.matrix() << ", " << std::endl
+        << "eigenY:" << std::endl << eigenY.matrix() << ", " << std::endl
+        << "thePolynomialOrder:" << thePolynomialOrder << std::endl
+        << "polyfit:" << std::endl << polyfit(eigenX, eigenY, thePolynomialOrder) << std::endl;
   return polyfit(eigenX, eigenY, thePolynomialOrder);
+}
+
+const vector<double> selectValuesFollowingGradient(const vector<double> theValues) {
+  const double EPSILON = 0.5;
+  enum SIGNOFGRADIENT{POSITIVE,NEGATIVE};
+  const SIGNOFGRADIENT theGradient = (theValues[1]-theValues[0])>0.?POSITIVE:NEGATIVE;
+  vector<double> valuesFollowingTheGradient={theValues[0]};
+  if (theGradient==POSITIVE) {// POSITIVE gradient
+    for (int v=1; v<theValues.size(); v++) {
+      if ((theValues[v]>theValues[v-1]) || abs(theValues[v]-theValues[v-1])>EPSILON) {// still increasing or close by
+        valuesFollowingTheGradient.push_back(theValues[v]);
+      } else {
+        break;
+      }
+    }
+  } else {// NEGATIVE gradient
+    for (int v=1; v<theValues.size(); v++) {
+      if ((theValues[v]<theValues[v-1]) || abs(theValues[v]-theValues[v-1])>EPSILON) {// still decreasing or close by
+        valuesFollowingTheGradient.push_back(theValues[v]);
+      } else {
+        break;
+      }
+    }
+  }
+  return valuesFollowingTheGradient;
+}
+
+const vector<double> keepValues(const vector<double> theValues, const int theNumberOfValues) {
+  vector<double> values;
+  for (int v=0; v<theNumberOfValues; v++) {
+      values.push_back(theValues[v]);
+  }
+  return values;
+}
+
+Eigen::VectorXd trimmedPolyfit(const vector<double> theXValues, const vector<double> theYValues, const int thePolynomialOrder) {
+  const vector<double> xTrackingGradient=selectValuesFollowingGradient(theXValues);
+  const vector<double> matchingY=keepValues(theYValues, xTrackingGradient.size());
+  cout  << "xTrackingGradient:" << std::endl << toString(xTrackingGradient) << ", " << std::endl
+  << "matchingY:" << std::endl << toString(matchingY) << ", " << std::endl;
+  Eigen::VectorXd coefficients=polyfit(xTrackingGradient, matchingY, thePolynomialOrder<(xTrackingGradient.size()-1)?thePolynomialOrder:(xTrackingGradient.size()-1));
+  coefficients.resize(thePolynomialOrder+1, 1);
+  for (int c=xTrackingGradient.size(); c<coefficients.size(); c++) {
+    coefficients[c]=0.;
+  }
+  return coefficients;
 }
 
 const double fPrimeOfX(const Eigen::VectorXd thePolynomialCoefficients, const double theValueX) {
@@ -93,9 +158,9 @@ const double fPrimeOfX(const Eigen::VectorXd thePolynomialCoefficients, const do
   if (numberOfCoefficients > 0) {
     double valueAtX=thePolynomialCoefficients[1];
     for (int c=2;c<numberOfCoefficients;c++) {
-      valueAtX+=thePolynomialCoefficients[c]*pow(theValueX,c-1);
+      valueAtX+=c*thePolynomialCoefficients[c]*pow(theValueX,c-1);
     }
-    //cout << "fPrimeOfX-numberOfCoefficients:" << numberOfCoefficients << ", valueAtX:" << valueAtX << std::endl;
+    cout << "fPrimeOfX-numberOfCoefficients:" << numberOfCoefficients << ", valueAtX:" << valueAtX << std::endl;
     return valueAtX;
   } else {
     return 0.;
@@ -106,16 +171,38 @@ const double tangentialAngle(const Eigen::VectorXd thePolynomialCoefficients, co
   return atan(fPrimeOfX(thePolynomialCoefficients, theValueX));
 }
 
-const Eigen::Affine2d mapToCarTransformation(const double theCarMapPositionX, const double theCarMapPositionY, const double theCarMapRotation) {
+const Eigen::Affine2d affineMapToCarTransformation(const double theCarMapPositionX, const double theCarMapPositionY, const double theCarMapRotation) {
   cout << "theCarMapPositionX:" << theCarMapPositionX << ", theCarMapPositionY:" << theCarMapPositionY << ", theCarMapRotation:" << theCarMapRotation << std::endl;
-  const Eigen::Affine2d translation(Eigen::Translation<double,2>(-theCarMapPositionX,-theCarMapPositionY));
-  const Eigen::Affine2d  rotation((Eigen::Rotation2D<double>(-theCarMapRotation)));
-  cout << "translation:" << std::endl << translation.matrix() << " ," << std::endl << "rotation:" << std::endl << rotation.matrix() << std::endl << " ," << std::endl << "rotation*translation:" << std::endl << (rotation*translation).matrix() << std::endl;
-  return rotation*translation;
+  const Eigen::Affine2d translateToOrigin(Eigen::Translation<double,2>(-theCarMapPositionX,-theCarMapPositionY));
+  const Eigen::Affine2d rotation((Eigen::Rotation2D<double>(theCarMapRotation)));
+  //const Eigen::Affine2d translateToMap(Eigen::Translation<double,2>(theCarMapPositionX,theCarMapPositionY));
+  cout  << "translateToOrigin:" << std::endl << translateToOrigin.matrix() << " ," << std::endl
+        << "rotation:" << std::endl << rotation.matrix() << std::endl << " ," << std::endl
+        //<< "translateToMap:" << std::endl << translateToMap.matrix() << " ," << std::endl
+        << "rotation*translateToOrigin:" << std::endl << (rotation*translateToOrigin).matrix()
+        << std::endl;
+  return rotation*translateToOrigin;
+}
+
+const Eigen::Matrix3d matrixMapToCarTransformation(const double theMapPositionX, const double theMapPositionY, const double theMapRotation) {
+  cout << "theMapPositionX:" << theMapPositionX << ", theMapPositionY:" << theMapPositionY << ", theMapRotation:" << theMapRotation << std::endl;
+  const double sinMapRotation=sin(theMapRotation);
+  const double cosMapRotation=cos(theMapRotation);
+  Eigen::Matrix3d rotationAndTranslation;
+  rotationAndTranslation <<
+    cosMapRotation, -sinMapRotation,  -theMapPositionX,
+    sinMapRotation, cosMapRotation,   -theMapPositionY,
+    0.,             0.,               1;
+  cout << "rotationAndTranslation:" << std::endl << rotationAndTranslation.matrix() << std::endl;
+  return rotationAndTranslation;
 }
 
 const Eigen::Affine2d mapToCarTransformation(const Eigen::Vector2d theCarMapPosition, const double theCarMapRotation) {
-  return mapToCarTransformation(theCarMapPosition[0], theCarMapPosition[1], theCarMapRotation);
+  return affineMapToCarTransformation(theCarMapPosition[0], theCarMapPosition[1], theCarMapRotation);
+}
+
+const Eigen::Matrix3d mapToCarTransformationX(const Eigen::Vector2d theCarMapPosition, const double theCarMapRotation) {
+  return matrixMapToCarTransformation(theCarMapPosition[0], theCarMapPosition[1], theCarMapRotation);
 }
 
 const Eigen::Vector3d transformMapToCar(const Eigen::Affine2d theTransformationFromMapToCar, const Eigen::Vector3d theMapPosition) {
@@ -137,13 +224,33 @@ const vector<Eigen::Vector2d> transformMapToCar(const Eigen::Affine2d theTransfo
   return transformedPositions;
 }
 
+const Eigen::Vector3d transformMapToCar(const Eigen::Matrix3d theTransformationFromMapToCar, const Eigen::Vector3d theMapPosition) {
+  return theTransformationFromMapToCar*theMapPosition;
+}
+
+const Eigen::Vector2d transformMapToCar(const Eigen::Matrix3d theTransformationFromMapToCar, const Eigen::Vector2d theMapPosition) {
+  const Eigen::Vector3d homogeneousPosition(theMapPosition[0], theMapPosition[1], 1.);
+  const Eigen::Vector3d transformedPosition=transformMapToCar(theTransformationFromMapToCar,homogeneousPosition);
+  const Eigen::Vector2d xyPosition(transformedPosition[0], transformedPosition[1]);
+  return xyPosition;
+}
+
+const vector<Eigen::Vector2d> transformMapToCar(const Eigen::Matrix3d theTransformationFromMapToCar, const vector<Eigen::Vector2d> theMapPositions) {
+  vector<Eigen::Vector2d> transformedPositions;
+  for (int p=0; p<theMapPositions.size(); p++) {
+    transformedPositions.push_back(transformMapToCar(theTransformationFromMapToCar, theMapPositions[p]));
+  }
+  return transformedPositions;
+}
+
 const vector<Eigen::Vector2d> transformMapToCar(const double theCarXPosition, const double theCarYPosition, const double theCarRotation, const vector<double> theMapXPositions, const vector<double> theMapYPositions) {
   assert(theMapXPositions.size() == theMapYPositions.size());
   vector<Eigen::Vector2d> mapPositions;
   for (int p=0; p<theMapXPositions.size(); p++) {
     mapPositions.push_back(Eigen::Vector2d(theMapXPositions[p], theMapYPositions[p]));
   }
-  const Eigen::Affine2d transformation=mapToCarTransformation(theCarXPosition, theCarYPosition, theCarRotation);
+  //const Eigen::Matrix3d transformation=matrixMapToCarTransformation(theCarXPosition, theCarYPosition, theCarRotation);
+  const Eigen::Affine2d transformation=affineMapToCarTransformation(theCarXPosition, theCarYPosition, theCarRotation);
   return transformMapToCar(transformation, mapPositions);
 }
 
@@ -161,21 +268,6 @@ const vector<double> pullXCoordinate(vector<Eigen::Vector2d> thePoints) {
 
 const vector<double> pullYCoordinate(vector<Eigen::Vector2d> thePoints) {
   return pullCoordinate(thePoints,1);
-}
-
-const string toString(vector<double> theVector) {
-  std::ostringstream oss;
-  
-  if (!theVector.empty())
-  {
-    // Convert all but the last element to avoid a trailing ","
-    std::copy(theVector.begin(), theVector.end()-1,
-              std::ostream_iterator<int>(oss, ", "));
-    
-    // Now add the last element with no delimiter
-    oss << theVector.back();
-  }
-  return oss.str();
 }
 
 bool areSame(const double a, const double b, const double epsilon) {
@@ -360,16 +452,107 @@ const int translateCarToOneOneRotatePi() {
   return 0;
 }
 
+const int translateCarToTwoOneRotatePi() {
+  const Eigen::Vector2d carLocationOnMap(2.,1.);
+  const double carRotation=pi();
+  cout << "translateCarToTwoOneRotatePi-carLocationOnMap:" << carLocationOnMap.matrix() << std::endl << "transformMapToCar:" << mapToCarTransformation(carLocationOnMap, carRotation).matrix() << std::endl;
+  const Eigen::Vector2d mapLocation0(0.,0.);
+  const Eigen::Vector2d mapLocationFromCar0=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation0);
+  cout << "translateCarToTwoOneRotatePi-mapLocationFromCar0:" << mapLocationFromCar0.matrix() << std::endl;
+  assert(areSame(mapLocationFromCar0[0],2.) && areSame(mapLocationFromCar0[1],1.));
+  const Eigen::Vector2d mapLocation1(1.,1.);
+  const Eigen::Vector2d mapLocationFromCar1=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation1);
+  cout << "translateCarToTwoOneRotatePi-mapLocationFromCar1:" << mapLocationFromCar1.matrix() << std::endl;
+  assert(areSame(mapLocationFromCar1[0],1.) && areSame(mapLocationFromCar1[1],0.));
+  const Eigen::Vector2d mapLocation2(-1.,1.);
+  const Eigen::Vector2d mapLocationFromCar2=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation2);
+  assert(areSame(mapLocationFromCar2[0],3.) && areSame(mapLocationFromCar2[1],0.));
+  const Eigen::Vector2d mapLocation3(-1.,-1.);
+  const Eigen::Vector2d mapLocationFromCar3=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation3);
+  assert(areSame(mapLocationFromCar3[0],3.) && (mapLocationFromCar3[1],2.));
+  const Eigen::Vector2d mapLocation4(1.,-1.);
+  const Eigen::Vector2d mapLocationFromCar4=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation4);
+  assert(areSame(mapLocationFromCar4[0],1.) && areSame(mapLocationFromCar4[1],2.));
+  return 0;
+}
+
+const int nonZeroCoefficients(const Eigen::VectorXd theCoefficients) {
+  int nonZeros=0;
+  for (int c=0; c<theCoefficients.size(); c++) {
+    if (theCoefficients[c]!=0.) {
+      nonZeros++;
+    }
+  }
+  return nonZeros;
+}
+
+const int runPolyfit() {
+  
+  const int polynomialOrder = 3;
+  
+  const vector<double> globalPtsX_1 = {-93.05002,-107.7717,-123.3917,-134.97,-145.1165,-158.3417};
+  const vector<double> globalPtsY_1 = {65.34102,50.57938,33.37102,18.404,4.339378,-17.42898};
+  const Eigen::VectorXd globalCoeffs1 = trimmedPolyfit(globalPtsX_1, globalPtsY_1, polynomialOrder);// polynomial fit for midline of road
+  cout << "globalCoeffs:" << globalCoeffs1.size() << ":" << std::endl << globalCoeffs1 << std::endl;
+  cout << std::endl;
+  assert(globalCoeffs1.size()==(polynomialOrder+1));// 1 more than the polynomial order of 3
+  assert(nonZeroCoefficients(globalCoeffs1)==polynomialOrder+1);
+
+  const vector<double> globalPtsX_2 = {-107.7717,-123.3917,-134.97,-145.1165,-158.3417,-164.3164};
+  const vector<double> globalPtsY_2 = {50.57938,33.37102,18.404,4.339378,-17.42898,-30.18062};
+  const Eigen::VectorXd globalCoeffs2 = trimmedPolyfit(globalPtsX_2, globalPtsY_2, polynomialOrder);// polynomial fit for midline of road
+  cout << "globalCoeffs:" << globalCoeffs2.size() << ":" << std::endl << globalCoeffs2 << std::endl;
+  cout << std::endl;
+  assert(globalCoeffs2.size()==(polynomialOrder+1));// 1 more than the polynomial order of 3
+  assert(nonZeroCoefficients(globalCoeffs2)==polynomialOrder+1);
+
+  const vector<double> globalPtsX_3 = {-169.3365,-175.4917,-176.9617,-176.8864,-175.0817,-170.3617};
+  const vector<double> globalPtsY_3 = {-42.84062,-66.52898,-76.85062,-90.64063,-100.3206,-115.129};
+  const Eigen::VectorXd globalCoeffs3 = trimmedPolyfit(globalPtsX_3, globalPtsY_3, polynomialOrder);// polynomial fit for midline of road
+  cout << "globalCoeffs:" << globalCoeffs3.size() << ":" << std::endl << globalCoeffs3 << std::endl;
+  cout << std::endl;
+  assert(globalCoeffs3.size()==(polynomialOrder+1));// 1 more than the polynomial order of 3
+  assert(nonZeroCoefficients(globalCoeffs3)==3);// polnomial order is 2 -> 3 coefficients
+
+  const vector<double> globalPtsX_4 = {-176.9617,-176.8864,-175.0817,-170.3617,-164.4217,-158.9417};
+  const vector<double> globalPtsY_4 = {-76.85062,-90.64063,-100.3206,-115.129,-124.5206,-131.399};
+  const Eigen::VectorXd globalCoeffs4 = trimmedPolyfit(globalPtsX_4, globalPtsY_4, polynomialOrder);// polynomial fit for midline of road
+  cout << "globalCoeffs:" << globalCoeffs4.size() << ":" << std::endl << globalCoeffs4 << std::endl;
+  cout << std::endl;
+  assert(globalCoeffs4.size()==(polynomialOrder+1));// 1 more than the polynomial order of 3
+  assert(nonZeroCoefficients(globalCoeffs4)==polynomialOrder+1);
+  
+  const vector<double> globalPtsX_5 = {129.1083,129.1283,126.8983,122.3383,117.2083,98.34827};
+  const vector<double> globalPtsY_5 = {-108.669,-100.349,-89.95898,-79.97897,-69.827,-42.02898};
+  const Eigen::VectorXd globalCoeffs5 = trimmedPolyfit(globalPtsX_5, globalPtsY_5, polynomialOrder);// polynomial fit for midline of road
+  cout << "globalCoeffs:" << globalCoeffs5.size() << ":" << std::endl << globalCoeffs5 << std::endl;
+  cout << std::endl;
+  assert(globalCoeffs5.size()==(polynomialOrder+1));// 1 more than the polynomial order of 3
+  assert(nonZeroCoefficients(globalCoeffs5)==polynomialOrder+1);
+  
+  const vector<double> globalPtsX_6 = {129.1083,129.1283,126.8983,122.3383,117.2083,98.34827};
+  const vector<double> globalPtsY_6 = {-108.669,-100.349,-89.95898,-79.97897,-69.827,-42.02898};
+  const Eigen::VectorXd globalCoeffs6 = trimmedPolyfit(globalPtsX_6, globalPtsY_6, polynomialOrder);// polynomial fit for midline of road
+  cout << "globalCoeffs:" << globalCoeffs6.size() << ":" << std::endl << globalCoeffs6 << std::endl;
+  cout << std::endl;
+  assert(globalCoeffs6.size()==(polynomialOrder+1));// 1 more than the polynomial order of 3
+  assert(nonZeroCoefficients(globalCoeffs6)==polynomialOrder+1);
+
+  return 0.;
+}
+
 const int testMappingToCar() {
   testCarSameAsMap();// simplest car coordinates same as map
   rotateCarAtOriginByPiOver2();// rotate to the north
   rotateCarAtOriginByPi();// rotate to the west
   translateCarToOneOne();
   translateCarToOneOneRotatePi();
+  translateCarToTwoOneRotatePi();
+  runPolyfit();
   return 0;
 }
 
-const bool RUNTESTS = false;
+const bool RUNTESTS = true;
 
 int main() {
   
@@ -377,7 +560,7 @@ int main() {
     testMappingToCar();
     return 0;
   }
-  std::cout << "mapToCarTransform:" << mapToCarTransformation(-40., 108., 3.733).matrix() << std::endl;
+  std::cout << "mapToCarTransform:" << matrixMapToCarTransformation(-40., 108., 3.733).matrix() << std::endl;
   
   uWS::Hub h;
 
@@ -411,12 +594,12 @@ int main() {
           * Both are in between [-1, 1].
           *
           */
-          const Eigen::VectorXd globalCoeffs = polyfit(globalPtsX, globalPtsY, 1);// polynomial fit for midline of road
-          cout << "globalCoeffs:" << globalCoeffs << std::endl;
+          const Eigen::VectorXd globalCoeffs = trimmedPolyfit(globalPtsX, globalPtsY, 3);// polynomial fit for midline of road
+          cout << "globalCoeffs:" << globalCoeffs.size() << ":" << globalCoeffs << std::endl;
 
           const double globalYDesired=polyeval(globalCoeffs, globalPx);
           const double cte = globalYDesired-globalPy;// difference between current y and the path y at the current x
-          cout << "yAtCurrentX:" << globalYDesired << ", py:" << globalPy << ", cte:" << cte << std::endl;
+          cout << "globalYDesired:" << globalYDesired << ", py:" << globalPy << ", cte:" << cte << std::endl;
           // TODO: calculate the orientation error
           //double epsi = ? ;
           // eψ(t+1)  =  ψ(t)−ψdes(t)+((v(t)/Lf)*δ(t)*dt)
@@ -428,15 +611,16 @@ int main() {
           //
           //      there should be only 2 coefficients for a 1 degree polynomial: c0 & c1
           //      therefore f'(t) should be just c1.
-          //double psiDesired = atan(coeffs[1]);
+          double psiDesiredCalculated = atan(globalCoeffs[1]+2.*globalCoeffs[2]*globalPx+3.*globalCoeffs[3]*pow(globalPx,2));
           const double globalPsiDesired = tangentialAngle(globalCoeffs, globalPx);
-          //cout << "psiDesired:" << psiDesired << ", psiDesiredCalculated:" << psiDesiredCalculated << std::endl;
+          cout << "globalPsiDesired:" << globalPsiDesired << ", psiDesiredCalculated:" << psiDesiredCalculated << std::endl;
+          assert(areSame(psiDesiredCalculated, globalPsiDesired));
           const double epsi = globalPsi-globalPsiDesired;
           cout << "epsi:" << epsi << std::endl;
           
           Eigen::VectorXd state(6);
           state << globalPx,globalPy,globalPsi,v,cte,epsi;
-          const vector<double> globalSolution = mpc.Solve(state, polyfit(globalPtsX,globalPtsY,3));
+          const vector<double> globalSolution = mpc.Solve(state, globalCoeffs);
 
           const double sX = globalSolution[0];
           const double sY = globalSolution[1];
@@ -458,7 +642,7 @@ int main() {
           msgJson["throttle"] = throttle_value;
 
           cout << "globalPsi:" << globalPsi << " = " << rad2deg(globalPsi) << " degrees, sine:" << sin(globalPsi) << ", cosine:" << cos(globalPsi) << std::endl;
-          const vector<Eigen::Vector2d> nextXYCarValues=transformMapToCar(globalPx, globalPy, globalPsi, globalPtsX, globalPtsY);
+          const vector<Eigen::Vector2d> nextXYCarValues=transformMapToCar(globalPx, globalPy, -globalPsi, globalPtsX, globalPtsY);
 
           //Display the MPC predicted trajectory
           vector<double> mpc_x_vals;
@@ -503,7 +687,7 @@ int main() {
           //
           // NOTE: REMEMBER TO SET THIS TO 100 MILLISECONDS BEFORE
           // SUBMITTING.
-          this_thread::sleep_for(chrono::milliseconds(100));
+          //this_thread::sleep_for(chrono::milliseconds(100));
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
       } else {

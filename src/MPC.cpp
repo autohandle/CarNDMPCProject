@@ -10,8 +10,8 @@ using CppAD::AD;
 // TODO: Set the timestep length and duration
 //size_t N = 0;
 //double dt = 0;
-const size_t N = 25; // long — in types.h:94
-const double dt = 0.05; //0.1 ;
+const size_t N = 10; // long — in types.h:94
+const double dt = 0.1; //0.1 ;
 const double psiDesired = 0;
 
 // This value assumes the model presented in the classroom is used.
@@ -57,7 +57,9 @@ const CppAD::AD<double> fPrimeOfX(const Eigen::VectorXd thePolynomialCoefficient
   if (numberOfCoefficients > 0) {
     CppAD::AD<double> valueAtX=thePolynomialCoefficients[1];
     for (int c=2;c<numberOfCoefficients;c++) {
-      valueAtX+=thePolynomialCoefficients[c]*CppAD::pow(theValueX,c-1);
+      CppAD::AD<double> power=c;
+      CppAD::AD<double> coefficient=thePolynomialCoefficients[c];
+      valueAtX+=power*coefficient*CppAD::pow(theValueX,c-1);
     }
     //cout << "CppADfPrimeOfX-numberOfCoefficients:" << numberOfCoefficients << ", valueAtX:" << valueAtX << std::endl;
     return valueAtX;
