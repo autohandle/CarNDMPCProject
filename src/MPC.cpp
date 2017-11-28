@@ -25,7 +25,7 @@ const double psiDesired = 0;
 //
 // This is the length from front to CoG that has a similar radius.
 const double Lf = 2.67;
-double referenceVelocity = 10;
+double referenceVelocity = 40;
 
 
 // The solver takes all the state variables and actuator
@@ -126,7 +126,7 @@ class FG_eval {
     
     cout << "yCost:" << cteCost << ", psiCost:" << psiCost << ", dCost:" << daCost << ", daCost:" << daDeltaCost << ", vCost:" << vCost << std::endl;
     //fg[0] = 0;
-    fg[0] = cteCost+psiCost+daCost+daDeltaCost+vCost;
+    fg[0] = (500*cteCost)+psiCost+daCost+daDeltaCost+vCost;
     cout << "total cost:" << fg[0] << std::endl;
     
     // Reference State Cost
@@ -178,9 +178,9 @@ class FG_eval {
       // ψ(t+1)=ψ(t)+v(t)/Lf*δ(t)*dt
       const AD<double> psi1 = vars[psi_start + t];
       //const AD<double> psi0 = vars[psi_start + t - 1];
-      const AD<double> d0 = vars[delta_start + t -1];
+      const AD<double> delta0 = vars[delta_start + t -1];
       //fg[1 + psi_start + t] = psi1-(psi0+v0/Lf*d0*dt);
-      fg[1 + psi_start + t] = psi1-(psi0-v0/Lf*d0*dt);// project notes: δ is positive rotating counter clockwise
+      fg[1 + psi_start + t] = psi1-(psi0-(v0/Lf)*delta0*dt);// project notes tips & tricks: δ is positive rotating counter clockwise
 
       
       // v(t+1) = v(t)+a(t)*dt
@@ -202,7 +202,7 @@ class FG_eval {
       const AD<double> epsi1 = vars[epsi_start + t];
       const AD<double> psiDesiredAtX0 = tangentialAngle(coeffs, x0);
       const AD<double> psiError = psi0-psiDesiredAtX0;
-      fg[1 + epsi_start + t] = epsi1-(psiError + (v0/Lf)*d0*dt);
+      fg[1 + epsi_start + t] = epsi1-(psiError + (v0/Lf)*delta0*dt);
     }
   }
 };
@@ -214,7 +214,7 @@ MPC::MPC() {}
 MPC::~MPC() {}
 
 //vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
-vector<double> MPC::Solve(Eigen::VectorXd state/*x,y,psi,v,cte,epsi*/, Eigen::VectorXd coeffs/*=polyfit(ptsx,ptsy,1)*/) {
+vector<vector<double>> MPC::Solve(Eigen::VectorXd state/*x,y,psi,v,cte,epsi*/, Eigen::VectorXd coeffs/*=polyfit(ptsx,ptsy,1)*/) {
 
   bool ok = true;
   size_t i;
@@ -348,8 +348,22 @@ vector<double> MPC::Solve(Eigen::VectorXd state/*x,y,psi,v,cte,epsi*/, Eigen::Ve
   //
   // {...} is shorthand for creating a vector, so auto x1 = {1.0,2.0}
   // creates a 2 element double vector.
-  return {solution.x[x_start + 1],   solution.x[y_start + 1],
-    solution.x[psi_start + 1], solution.x[v_start + 1],
-    solution.x[cte_start + 1], solution.x[epsi_start + 1],
-    solution.x[delta_start],   solution.x[a_start]};
+  const vector<double> solutionState = {
+    /*0*/ solution.x[x_start + 1],
+    /*1*/ solution.x[y_start + 1],
+    /*2*/ solution.x[psi_start + 1],
+    /*3*/ solution.x[v_start + 1],
+    /*4*/ solution.x[cte_start + 1],
+    /*5*/ solution.x[epsi_start + 1],
+    /*6*/ solution.x[delta_start],
+    /*7*/ solution.x[a_start]};
+  
+  vector<double> solutionX;
+  vector<double> solutionY;
+  for (int x=0; x<N-1; x++) {
+    solutionX.push_back(solution.x[x_start+x+1]);
+    solutionY.push_back(solution.x[y_start+x+1]);
+  }
+  
+  return { solutionState, solutionX, solutionY};
 }

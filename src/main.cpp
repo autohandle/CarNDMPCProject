@@ -13,10 +13,12 @@
 #include "MPC.h"
 #include "json.hpp"
 #include "assert.h"
-
+#include <sys/time.h>
 
 // for convenience
 using json = nlohmann::json;
+
+const bool DEBUGPRINT=false;
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -36,6 +38,13 @@ string hasData(string s) {
     return s.substr(b1, b2 - b1 + 2);
   }
   return "";
+}
+
+typedef unsigned long long timestamp_t;
+timestamp_t get_timestamp() {
+  struct timeval now;
+  gettimeofday (&now, NULL);
+  return  now.tv_usec + (timestamp_t)now.tv_sec * 1000000;
 }
 
 // Evaluate a polynomial.
@@ -79,6 +88,79 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals, int order)
   return result;
 }
 
+bool areSame(const double a, const double b, const double epsilon) {
+  return fabs(a - b) < epsilon;
+}
+
+bool isZero(const double a, const double epsilon) {
+  return fabs(a) < epsilon;
+}
+
+bool isNotZero(const double a, const double epsilon) {
+  return !isZero(a, epsilon);
+}
+
+bool areSame(const  Eigen::VectorXd a, const  Eigen::VectorXd b, const double epsilon) {
+  for (int r=0; r<a.rows(); r++) {
+    if (!areSame(a(r),b(r), epsilon)) {
+      std::cout << std::endl
+      << "a(" << r << "):" << a(r) << " != "
+      << "b(" << r << "):" << b(r) << " == "
+      << "fabs(a-b):" << fabs(a(r) - b(r))
+      << std::endl;
+      return false;
+    }
+  }
+  return true;
+}
+
+bool areSame(const  Eigen::MatrixXd a, const  Eigen::MatrixXd b, const double epsilon) {
+  for (int r=0; r<a.rows(); r++) {
+    for (int c=0; c<a.cols(); c++) {
+      if (!areSame(a(r,c),b(r,c), epsilon)) {
+        std::cout << std::endl
+        << "a(" << r << "," << c << "):" << a(r,c) << " != "
+        << "b(" << r << "," << c << "):" << b(r,c) << " == "
+        << "fabs(a-b):" << fabs(a(r,c) - b(r,c))
+        << std::endl;
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+bool areSame(const Eigen::Matrix3d a, const  Eigen::Affine2d b, const double epsilon) {
+  return areSame(a, (Eigen::MatrixXd) b.matrix(), epsilon);
+}
+
+static const double EPSILON=1.e-5;
+
+bool areSame(const Eigen::Matrix3d a, const  Eigen::Affine2d b) {
+  return areSame(a,b,EPSILON);
+}
+
+bool areSame(const  Eigen::VectorXd a, const  Eigen::VectorXd b) {
+  return areSame(a, b, EPSILON);
+}
+
+bool areSame( Eigen::MatrixXd a,  Eigen::MatrixXd b) {
+  return areSame(a, b, EPSILON);
+}
+
+bool areSame(double a, double b) {
+  return areSame(a, b, EPSILON);
+}
+
+bool isZero(double a) {
+  return isZero(a, EPSILON);
+  
+}
+
+bool isNotZero(double a) {
+  return isNotZero(a, EPSILON);
+}
+
 const string toString(vector<double> theVector) {
   std::ostringstream oss;
   
@@ -94,15 +176,29 @@ const string toString(vector<double> theVector) {
   return oss.str();
 }
 
+const string toString(vector<Eigen::Vector2d> theVector) {
+  std::ostringstream oss;
+  
+  for (int v=0; v<theVector.size(); v++) {
+    Eigen::Vector2d v2d = theVector[v];
+    oss << "{" << v2d.matrix() << "}";
+    if (v<theVector.size()-1) {
+      oss << " ,";
+    }
+  }
+  return oss.str();
+}
+
 // Eigen::Vector3d v2(v1.data())
 // VectorXcd v3 = VectorXcd::Map(v2.data(), v2.size());
 Eigen::VectorXd polyfit(const vector<double> theXValues, const vector<double> theYValues, const int thePolynomialOrder) {
   Eigen::VectorXd eigenX = Eigen::VectorXd::Map(theXValues.data(), theXValues.size());
   Eigen::VectorXd eigenY = Eigen::VectorXd::Map(theYValues.data(), theYValues.size());
-  cout  << "eigenX:" << std::endl << eigenX.matrix() << ", " << std::endl
-        << "eigenY:" << std::endl << eigenY.matrix() << ", " << std::endl
-        << "thePolynomialOrder:" << thePolynomialOrder << std::endl
-        << "polyfit:" << std::endl << polyfit(eigenX, eigenY, thePolynomialOrder) << std::endl;
+  if (DEBUGPRINT)
+    cout  << "eigenX:" << std::endl << eigenX.matrix() << ", " << std::endl
+          << "eigenY:" << std::endl << eigenY.matrix() << ", " << std::endl
+          << "thePolynomialOrder:" << thePolynomialOrder << std::endl
+          << "polyfit:" << std::endl << polyfit(eigenX, eigenY, thePolynomialOrder) << std::endl;
   return polyfit(eigenX, eigenY, thePolynomialOrder);
 }
 
@@ -172,58 +268,75 @@ const double tangentialAngle(const Eigen::VectorXd thePolynomialCoefficients, co
 }
 
 const Eigen::Affine2d affineMapToCarTransformation(const double theCarMapPositionX, const double theCarMapPositionY, const double theCarMapRotation) {
-  cout << "theCarMapPositionX:" << theCarMapPositionX << ", theCarMapPositionY:" << theCarMapPositionY << ", theCarMapRotation:" << theCarMapRotation << std::endl;
+  if (DEBUGPRINT)
+    cout << "affineMapToCarTransformation-theCarMapPositionX:" << theCarMapPositionX << ", theCarMapPositionY:" << theCarMapPositionY << ", theCarMapRotation:" << theCarMapRotation << std::endl;
   const Eigen::Affine2d translateToOrigin(Eigen::Translation<double,2>(-theCarMapPositionX,-theCarMapPositionY));
   const Eigen::Affine2d rotation((Eigen::Rotation2D<double>(theCarMapRotation)));
   //const Eigen::Affine2d translateToMap(Eigen::Translation<double,2>(theCarMapPositionX,theCarMapPositionY));
-  cout  << "translateToOrigin:" << std::endl << translateToOrigin.matrix() << " ," << std::endl
-        << "rotation:" << std::endl << rotation.matrix() << std::endl << " ," << std::endl
-        //<< "translateToMap:" << std::endl << translateToMap.matrix() << " ," << std::endl
-        << "rotation*translateToOrigin:" << std::endl << (rotation*translateToOrigin).matrix()
-        << std::endl;
+  if (DEBUGPRINT)
+    cout  << "affineMapToCarTransformation-translateToOrigin:" << std::endl << translateToOrigin.matrix() << " ," << std::endl
+          << "rotation:" << std::endl << rotation.matrix() << std::endl << " ," << std::endl
+          //<< "translateToMap:" << std::endl << translateToMap.matrix() << " ," << std::endl
+          << "rotation*translateToOrigin:" << std::endl << (rotation*translateToOrigin).matrix()
+          << std::endl;
   return rotation*translateToOrigin;
 }
 
 const Eigen::Matrix3d matrixMapToCarTransformation(const double theMapPositionX, const double theMapPositionY, const double theMapRotation) {
-  cout << "theMapPositionX:" << theMapPositionX << ", theMapPositionY:" << theMapPositionY << ", theMapRotation:" << theMapRotation << std::endl;
+  if (DEBUGPRINT) cout << "matrixMapToCarTransformation-theMapPositionX:" << theMapPositionX << ", theMapPositionY:" << theMapPositionY << ", theMapRotation:" << theMapRotation << std::endl;
   const double sinMapRotation=sin(theMapRotation);
   const double cosMapRotation=cos(theMapRotation);
+  const double sinRotationXtranslation=sinMapRotation*(-theMapPositionX);
+  const double sinRotationYtranslation=sinMapRotation*(-theMapPositionY);
+  const double cosRotationXtranslation=cosMapRotation*(-theMapPositionX);
+  const double cosRotationYtranslation=cosMapRotation*(-theMapPositionY);
   Eigen::Matrix3d rotationAndTranslation;
   rotationAndTranslation <<
-    cosMapRotation, -sinMapRotation,  -theMapPositionX,
-    sinMapRotation, cosMapRotation,   -theMapPositionY,
+    cosMapRotation, -sinMapRotation,  +cosRotationXtranslation-sinRotationYtranslation,
+    sinMapRotation, cosMapRotation,   +sinRotationXtranslation+cosRotationYtranslation,
     0.,             0.,               1;
-  cout << "rotationAndTranslation:" << std::endl << rotationAndTranslation.matrix() << std::endl;
+  if (DEBUGPRINT) cout << "matrixMapToCarTransformation-rotationAndTranslation:" << std::endl << rotationAndTranslation.matrix() << std::endl;
   return rotationAndTranslation;
 }
 
-const Eigen::Affine2d mapToCarTransformation(const Eigen::Vector2d theCarMapPosition, const double theCarMapRotation) {
+const Eigen::Affine2d affineMapToCarTransformation(const Eigen::Vector2d theCarMapPosition, const double theCarMapRotation) {
   return affineMapToCarTransformation(theCarMapPosition[0], theCarMapPosition[1], theCarMapRotation);
 }
 
-const Eigen::Matrix3d mapToCarTransformationX(const Eigen::Vector2d theCarMapPosition, const double theCarMapRotation) {
+const Eigen::Matrix3d matrixMapToCarTransformation(const Eigen::Vector2d theCarMapPosition, const double theCarMapRotation) {
   return matrixMapToCarTransformation(theCarMapPosition[0], theCarMapPosition[1], theCarMapRotation);
 }
 
-const Eigen::Vector3d transformMapToCar(const Eigen::Affine2d theTransformationFromMapToCar, const Eigen::Vector3d theMapPosition) {
+const Eigen::Vector3d affineTransformMapToCar(const Eigen::Affine2d theTransformationFromMapToCar, const Eigen::Vector3d theMapPosition) {
   return theTransformationFromMapToCar*theMapPosition;
 }
 
-const Eigen::Vector2d transformMapToCar(const Eigen::Affine2d theTransformationFromMapToCar, const Eigen::Vector2d theMapPosition) {
+const Eigen::Vector3d matrixTransformMapToCar(const Eigen::Matrix3d theTransformationFromMapToCar, const Eigen::Vector3d theMapPosition) {
+  return theTransformationFromMapToCar*theMapPosition;
+}
+
+const Eigen::Vector2d affineTransformMapToCar(const Eigen::Affine2d theTransformationFromMapToCar, const Eigen::Vector2d theMapPosition) {
   const Eigen::Vector3d homogeneousPosition(theMapPosition[0], theMapPosition[1], 1.);
-  const Eigen::Vector3d transformedPosition=transformMapToCar(theTransformationFromMapToCar,homogeneousPosition);
+  const Eigen::Vector3d transformedPosition=affineTransformMapToCar(theTransformationFromMapToCar,homogeneousPosition);
   const Eigen::Vector2d xyPosition(transformedPosition[0], transformedPosition[1]);
   return xyPosition;
 }
 
-const vector<Eigen::Vector2d> transformMapToCar(const Eigen::Affine2d theTransformationFromMapToCar, const vector<Eigen::Vector2d> theMapPositions) {
+const Eigen::Vector2d matrixTransformMapToCar(const Eigen::Matrix3d theTransformationFromMapToCar, const Eigen::Vector2d theMapPosition) {
+  const Eigen::Vector3d homogeneousPosition(theMapPosition[0], theMapPosition[1], 1.);
+  const Eigen::Vector3d transformedPosition=matrixTransformMapToCar(theTransformationFromMapToCar,homogeneousPosition);
+  const Eigen::Vector2d xyPosition(transformedPosition[0], transformedPosition[1]);
+  return xyPosition;
+}
+
+const vector<Eigen::Vector2d> affineTransformMapToCar(const Eigen::Affine2d theTransformationFromMapToCar, const vector<Eigen::Vector2d> theMapPositions) {
   vector<Eigen::Vector2d> transformedPositions;
   for (int p=0; p<theMapPositions.size(); p++) {
-    transformedPositions.push_back(transformMapToCar(theTransformationFromMapToCar, theMapPositions[p]));
+    transformedPositions.push_back(affineTransformMapToCar(theTransformationFromMapToCar, theMapPositions[p]));
   }
   return transformedPositions;
 }
-
+/*
 const Eigen::Vector3d transformMapToCar(const Eigen::Matrix3d theTransformationFromMapToCar, const Eigen::Vector3d theMapPosition) {
   return theTransformationFromMapToCar*theMapPosition;
 }
@@ -242,7 +355,7 @@ const vector<Eigen::Vector2d> transformMapToCar(const Eigen::Matrix3d theTransfo
   }
   return transformedPositions;
 }
-
+*/
 const vector<Eigen::Vector2d> transformMapToCar(const double theCarXPosition, const double theCarYPosition, const double theCarRotation, const vector<double> theMapXPositions, const vector<double> theMapYPositions) {
   assert(theMapXPositions.size() == theMapYPositions.size());
   vector<Eigen::Vector2d> mapPositions;
@@ -250,8 +363,10 @@ const vector<Eigen::Vector2d> transformMapToCar(const double theCarXPosition, co
     mapPositions.push_back(Eigen::Vector2d(theMapXPositions[p], theMapYPositions[p]));
   }
   //const Eigen::Matrix3d transformation=matrixMapToCarTransformation(theCarXPosition, theCarYPosition, theCarRotation);
-  const Eigen::Affine2d transformation=affineMapToCarTransformation(theCarXPosition, theCarYPosition, theCarRotation);
-  return transformMapToCar(transformation, mapPositions);
+  const Eigen::Affine2d affineTransformation=affineMapToCarTransformation(theCarXPosition, theCarYPosition, theCarRotation);
+  const Eigen::Matrix3d matrixTransformation=matrixMapToCarTransformation(theCarXPosition, theCarYPosition, theCarRotation);
+  assert(areSame(matrixTransformation, affineTransformation));
+  return affineTransformMapToCar(affineTransformation, mapPositions);
 }
 
 const vector<double> pullCoordinate(vector<Eigen::Vector2d> thePoints, const int theCoordinate) {
@@ -270,90 +385,37 @@ const vector<double> pullYCoordinate(vector<Eigen::Vector2d> thePoints) {
   return pullCoordinate(thePoints,1);
 }
 
-bool areSame(const double a, const double b, const double epsilon) {
-  return fabs(a - b) < epsilon;
-}
-
-bool isZero(const double a, const double epsilon) {
-  return fabs(a) < epsilon;
-}
-
-bool isNotZero(const double a, const double epsilon) {
-  return !isZero(a, epsilon);
-}
-
-bool areSame(const  Eigen::VectorXd a, const  Eigen::VectorXd b, const double epsilon) {
-  for (int r=0; r<a.rows(); r++) {
-    if (!areSame(a(r),b(r), epsilon)) {
-      std::cout << std::endl
-      << "a(" << r << "):" << a(r) << " != "
-      << "b(" << r << "):" << b(r) << " == "
-      << "fabs(a-b):" << fabs(a(r) - b(r))
-      << std::endl;
-      return false;
-    }
+const vector<Eigen::Vector2d> polyFitPath(const Eigen::VectorXd theCoefficents, const double theInitialX, const int theNumberOfValues, const double theDeltaX) {
+  cout << "polyFitPath-theCoefficents:" << theCoefficents.matrix() << std::endl << "theInitialX:" << theInitialX << ", theDeltaX:" << theDeltaX << std::endl;
+  vector<Eigen::Vector2d> xyValues;
+  double x=theInitialX;
+  for (int xy=0; xy<theNumberOfValues; xy++) {
+    Eigen::Vector2d xyValue(x, polyeval(theCoefficents, x));
+    xyValues.push_back(xyValue);
+    x+=theDeltaX;
   }
-  return true;
-}
-
-bool areSame(const  Eigen::MatrixXd a, const  Eigen::MatrixXd b, const double epsilon) {
-  for (int r=0; r<a.rows(); r++) {
-    for (int c=0; c<a.cols(); c++) {
-      if (!areSame(a(r,c),b(r,c), epsilon)) {
-        std::cout << std::endl
-        << "a(" << r << "," << c << "):" << a(r,c) << " != "
-        << "b(" << r << "," << c << "):" << b(r,c) << " == "
-        << "fabs(a-b):" << fabs(a(r,c) - b(r,c))
-        << std::endl;
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-static const double EPSILON=1.e-5;
-
-bool areSame(const  Eigen::VectorXd a, const  Eigen::VectorXd b) {
-  return areSame(a, b, EPSILON);
-}
-
-bool areSame( Eigen::MatrixXd a,  Eigen::MatrixXd b) {
-  return areSame(a, b, EPSILON);
-}
-
-bool areSame(double a, double b) {
-  return areSame(a, b, EPSILON);
-}
-
-bool isZero(double a) {
-  return isZero(a, EPSILON);
-  
-}
-
-bool isNotZero(double a) {
-  return isNotZero(a, EPSILON);
+  return xyValues;
 }
 
 const int testCarSameAsMap() {
   const Eigen::Vector2d carLocationOnMap(0.,0.);
   const double carRotation=0.;
-  cout << "testCarCoordinatesSameAsMap-carLocationOnMap:" << carLocationOnMap.matrix() << std::endl << "mapToCarTransformation:" << mapToCarTransformation(carLocationOnMap, carRotation).matrix() << std::endl;
+  cout << "testCarCoordinatesSameAsMap-carLocationOnMap:" << carLocationOnMap.matrix() << std::endl << "mapToCarTransformation:" << affineMapToCarTransformation(carLocationOnMap, carRotation).matrix() << std::endl;
   const Eigen::Vector2d mapLocation0(0.,0.);
-  const Eigen::Vector2d mapLocationFromCar0=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation0);
+  const Eigen::Vector2d mapLocationFromCar0=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation0);
   assert(areSame(mapLocationFromCar0[0],0.) && areSame(mapLocationFromCar0[1],0.));
   const Eigen::Vector2d mapLocation1(1.,1.);
-  const Eigen::Vector2d mapLocationFromCar1=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation1);
+  const Eigen::Vector2d mapLocationFromCar1=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation1);
   cout << "testCarCoordinatesSameAsMap-mapLocationFromCar1:" << mapLocationFromCar1.matrix() << std::endl;
   assert(areSame(mapLocationFromCar1[0],1.) && areSame(mapLocationFromCar1[1],1.));
   const Eigen::Vector2d mapLocation2(-1.,1.);
-  const Eigen::Vector2d mapLocationFromCar2=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation2);
+  const Eigen::Vector2d mapLocationFromCar2=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation2);
   assert(areSame(mapLocationFromCar2[0],-1.) && areSame(mapLocationFromCar2[1],1.));
   const Eigen::Vector2d mapLocation3(-1.,-1.);
-  const Eigen::Vector2d mapLocationFromCar3=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation3);
+  const Eigen::Vector2d mapLocationFromCar3=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation3);
   assert(areSame(mapLocationFromCar3[0],-1.) && areSame(mapLocationFromCar3[1],-1.));
   const Eigen::Vector2d mapLocation4(1.,-1.);
-  const Eigen::Vector2d mapLocationFromCar4=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation4);
+  const Eigen::Vector2d mapLocationFromCar4=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation4);
   assert(areSame(mapLocationFromCar4[0],1.) && areSame(mapLocationFromCar4[1],-1.));
   return 0;
 }
@@ -361,22 +423,22 @@ const int testCarSameAsMap() {
 const int rotateCarAtOriginByPiOver2() {
   const Eigen::Vector2d carLocationOnMap(0.,0.);
   const double carRotation=-pi()/2.;
-  cout << "rotateCarCoordinatesAtOriginByPiOver2-carLocationOnMap:" << carLocationOnMap.matrix() << std::endl << "mapToCarTransformation:" << mapToCarTransformation(carLocationOnMap, carRotation).matrix() << std::endl;
+  cout << "rotateCarCoordinatesAtOriginByPiOver2-carLocationOnMap:" << carLocationOnMap.matrix() << std::endl << "mapToCarTransformation:" << affineMapToCarTransformation(carLocationOnMap, carRotation).matrix() << std::endl;
   const Eigen::Vector2d mapLocation0(0.,0.);// should stay same
-  const Eigen::Vector2d mapLocationFromCar0=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation0);
+  const Eigen::Vector2d mapLocationFromCar0=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation0);
   assert(areSame(mapLocationFromCar0[0],0.) && areSame(mapLocationFromCar0[1],0.));
   const Eigen::Vector2d mapLocation1(1.,1.);
-  const Eigen::Vector2d mapLocationFromCar1=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation1);
+  const Eigen::Vector2d mapLocationFromCar1=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation1);
   cout << "rotateCarCoordinatesAtOriginByPiOver2-mapLocationFromCar1:" << mapLocationFromCar1.matrix() << std::endl;
   assert(areSame(mapLocationFromCar1[0],1.) && areSame(mapLocationFromCar1[1],-1.));
   const Eigen::Vector2d mapLocation2(-1.,1.);
-  const Eigen::Vector2d mapLocationFromCar2=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation2);
+  const Eigen::Vector2d mapLocationFromCar2=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation2);
   assert(areSame(mapLocationFromCar2[0],1.) && areSame(mapLocationFromCar2[1],1.));
   const Eigen::Vector2d mapLocation3(-1.,-1.);
-  const Eigen::Vector2d mapLocationFromCar3=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation3);
+  const Eigen::Vector2d mapLocationFromCar3=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation3);
   assert(areSame(mapLocationFromCar3[0],-1.) && (mapLocationFromCar3[1],1.));
   const Eigen::Vector2d mapLocation4(1.,-1.);
-  const Eigen::Vector2d mapLocationFromCar4=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation4);
+  const Eigen::Vector2d mapLocationFromCar4=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation4);
   assert(areSame(mapLocationFromCar4[0],-1.) && areSame(mapLocationFromCar4[1],-1.));
   return 0;
 }
@@ -384,22 +446,22 @@ const int rotateCarAtOriginByPiOver2() {
 const int rotateCarAtOriginByPi() {
   const Eigen::Vector2d carLocationOnMap(0.,0.);
   const double carRotation=-pi();
-  cout << "rotateCarCoordinatesAtOriginByPiOver2-carLocationOnMap:" << carLocationOnMap.matrix() << std::endl << "transformMapToCar:" << mapToCarTransformation(carLocationOnMap, carRotation).matrix() << std::endl;
+  cout << "rotateCarCoordinatesAtOriginByPiOver2-carLocationOnMap:" << carLocationOnMap.matrix() << std::endl << "transformMapToCar:" << affineMapToCarTransformation(carLocationOnMap, carRotation).matrix() << std::endl;
   const Eigen::Vector2d mapLocation0(0.,0.);// should stay same
-  const Eigen::Vector2d mapLocationFromCar0=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation0);
+  const Eigen::Vector2d mapLocationFromCar0=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation0);
   assert(areSame(mapLocationFromCar0[0],0.) && areSame(mapLocationFromCar0[1],0.));
   const Eigen::Vector2d mapLocation1(1.,1.);
-  const Eigen::Vector2d mapLocationFromCar1=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation1);
+  const Eigen::Vector2d mapLocationFromCar1=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation1);
   cout << "rotateCarCoordinatesAtOriginByPiOver2-mapLocationFromCar1:" << mapLocationFromCar1.matrix() << std::endl;
   assert(areSame(mapLocationFromCar1[0],-1.) && areSame(mapLocationFromCar1[1],-1.));
   const Eigen::Vector2d mapLocation2(-1.,1.);
-  const Eigen::Vector2d mapLocationFromCar2=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation2);
+  const Eigen::Vector2d mapLocationFromCar2=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation2);
   assert(areSame(mapLocationFromCar2[0],1.) && areSame(mapLocationFromCar2[1],-1.));
   const Eigen::Vector2d mapLocation3(-1.,-1.);
-  const Eigen::Vector2d mapLocationFromCar3=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation3);
+  const Eigen::Vector2d mapLocationFromCar3=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation3);
   assert(areSame(mapLocationFromCar3[0],1.) && (mapLocationFromCar3[1],1.));
   const Eigen::Vector2d mapLocation4(1.,-1.);
-  const Eigen::Vector2d mapLocationFromCar4=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation4);
+  const Eigen::Vector2d mapLocationFromCar4=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation4);
   assert(areSame(mapLocationFromCar4[0],-1.) && areSame(mapLocationFromCar4[1],1.));
   return 0;
 }
@@ -407,23 +469,23 @@ const int rotateCarAtOriginByPi() {
 const int translateCarToOneOne() {
   const Eigen::Vector2d carLocationOnMap(1.,1.);
   const double carRotation=0.;
-  cout << "translateCarCoordinatesToOneOne-carLocationOnMap:" << carLocationOnMap.matrix() << std::endl << "transformMapToCar:" << mapToCarTransformation(carLocationOnMap, carRotation).matrix() << std::endl;
+  cout << "translateCarCoordinatesToOneOne-carLocationOnMap:" << carLocationOnMap.matrix() << std::endl << "transformMapToCar:" << affineMapToCarTransformation(carLocationOnMap, carRotation).matrix() << std::endl;
   const Eigen::Vector2d mapLocation0(0.,0.);// should stay same
-  const Eigen::Vector2d mapLocationFromCar0=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation0);
+  const Eigen::Vector2d mapLocationFromCar0=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation0);
   cout << "translateCarCoordinatesToOneOne-mapLocationFromCar0:" << mapLocationFromCar0.matrix() << std::endl;
   assert(areSame(mapLocationFromCar0[0],-1.) && areSame(mapLocationFromCar0[1],-1.));
   const Eigen::Vector2d mapLocation1(1.,1.);
-  const Eigen::Vector2d mapLocationFromCar1=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation1);
+  const Eigen::Vector2d mapLocationFromCar1=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation1);
   cout << "translateCarCoordinatesToOneOne-mapLocationFromCar1:" << mapLocationFromCar1.matrix() << std::endl;
   assert(areSame(mapLocationFromCar1[0],0.) && areSame(mapLocationFromCar1[1],0.));
   const Eigen::Vector2d mapLocation2(-1.,1.);
-  const Eigen::Vector2d mapLocationFromCar2=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation2);
+  const Eigen::Vector2d mapLocationFromCar2=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation2);
   assert(areSame(mapLocationFromCar2[0],-2.) && areSame(mapLocationFromCar2[1],0.));
   const Eigen::Vector2d mapLocation3(-1.,-1.);
-  const Eigen::Vector2d mapLocationFromCar3=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation3);
+  const Eigen::Vector2d mapLocationFromCar3=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation3);
   assert(areSame(mapLocationFromCar3[0],-2.) && (mapLocationFromCar3[1],-2.));
   const Eigen::Vector2d mapLocation4(1.,-1.);
-  const Eigen::Vector2d mapLocationFromCar4=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation4);
+  const Eigen::Vector2d mapLocationFromCar4=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation4);
   assert(areSame(mapLocationFromCar4[0],0.) && areSame(mapLocationFromCar4[1],-2.));
   return 0;
 }
@@ -431,23 +493,23 @@ const int translateCarToOneOne() {
 const int translateCarToOneOneRotatePi() {
   const Eigen::Vector2d carLocationOnMap(1.,1.);
   const double carRotation=pi();
-  cout << "translateCarToOneOneRotatePi-carLocationOnMap:" << carLocationOnMap.matrix() << std::endl << "transformMapToCar:" << mapToCarTransformation(carLocationOnMap, carRotation).matrix() << std::endl;
+  cout << "translateCarToOneOneRotatePi-carLocationOnMap:" << carLocationOnMap.matrix() << std::endl << "transformMapToCar:" << affineMapToCarTransformation(carLocationOnMap, carRotation).matrix() << std::endl;
   const Eigen::Vector2d mapLocation0(0.,0.);
-  const Eigen::Vector2d mapLocationFromCar0=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation0);
+  const Eigen::Vector2d mapLocationFromCar0=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation0);
   cout << "translateCarToOneOneRotatePi-mapLocationFromCar0:" << mapLocationFromCar0.matrix() << std::endl;
   assert(areSame(mapLocationFromCar0[0],1.) && areSame(mapLocationFromCar0[1],1.));
   const Eigen::Vector2d mapLocation1(1.,1.);
-  const Eigen::Vector2d mapLocationFromCar1=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation1);
+  const Eigen::Vector2d mapLocationFromCar1=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation1);
   cout << "translateCarToOneOneRotatePi-mapLocationFromCar1:" << mapLocationFromCar1.matrix() << std::endl;
   assert(areSame(mapLocationFromCar1[0],0.) && areSame(mapLocationFromCar1[1],0.));
   const Eigen::Vector2d mapLocation2(-1.,1.);
-  const Eigen::Vector2d mapLocationFromCar2=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation2);
+  const Eigen::Vector2d mapLocationFromCar2=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation2);
   assert(areSame(mapLocationFromCar2[0],2.) && areSame(mapLocationFromCar2[1],0.));
   const Eigen::Vector2d mapLocation3(-1.,-1.);
-  const Eigen::Vector2d mapLocationFromCar3=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation3);
+  const Eigen::Vector2d mapLocationFromCar3=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation3);
   assert(areSame(mapLocationFromCar3[0],2.) && (mapLocationFromCar3[1],2.));
   const Eigen::Vector2d mapLocation4(1.,-1.);
-  const Eigen::Vector2d mapLocationFromCar4=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation4);
+  const Eigen::Vector2d mapLocationFromCar4=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation4);
   assert(areSame(mapLocationFromCar4[0],0.) && areSame(mapLocationFromCar4[1],2.));
   return 0;
 }
@@ -455,23 +517,31 @@ const int translateCarToOneOneRotatePi() {
 const int translateCarToTwoOneRotatePi() {
   const Eigen::Vector2d carLocationOnMap(2.,1.);
   const double carRotation=pi();
-  cout << "translateCarToTwoOneRotatePi-carLocationOnMap:" << carLocationOnMap.matrix() << std::endl << "transformMapToCar:" << mapToCarTransformation(carLocationOnMap, carRotation).matrix() << std::endl;
+  cout << "translateCarToTwoOneRotatePi-carLocationOnMap:" << carLocationOnMap.matrix() << std::endl << "transformMapToCar:" << affineMapToCarTransformation(carLocationOnMap, carRotation).matrix() << std::endl;
+  
   const Eigen::Vector2d mapLocation0(0.,0.);
-  const Eigen::Vector2d mapLocationFromCar0=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation0);
-  cout << "translateCarToTwoOneRotatePi-mapLocationFromCar0:" << mapLocationFromCar0.matrix() << std::endl;
-  assert(areSame(mapLocationFromCar0[0],2.) && areSame(mapLocationFromCar0[1],1.));
+  const Eigen::Vector2d affineMapLocationFromCar0=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation0);
+  cout << "translateCarToTwoOneRotatePi-mapLocationFromCar0:" << affineMapLocationFromCar0.matrix() << std::endl;
+  assert(areSame(affineMapLocationFromCar0[0],2.) && areSame(affineMapLocationFromCar0[1],1.));
+  const Eigen::Vector2d matrixMapLocationFromCar0=matrixTransformMapToCar(matrixMapToCarTransformation(carLocationOnMap, carRotation), mapLocation0);
+
+  assert(areSame((Eigen::VectorXd) affineMapLocationFromCar0, (Eigen::VectorXd) matrixMapLocationFromCar0));
+  
   const Eigen::Vector2d mapLocation1(1.,1.);
-  const Eigen::Vector2d mapLocationFromCar1=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation1);
+  const Eigen::Vector2d mapLocationFromCar1=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation1);
   cout << "translateCarToTwoOneRotatePi-mapLocationFromCar1:" << mapLocationFromCar1.matrix() << std::endl;
   assert(areSame(mapLocationFromCar1[0],1.) && areSame(mapLocationFromCar1[1],0.));
+  
   const Eigen::Vector2d mapLocation2(-1.,1.);
-  const Eigen::Vector2d mapLocationFromCar2=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation2);
+  const Eigen::Vector2d mapLocationFromCar2=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation2);
   assert(areSame(mapLocationFromCar2[0],3.) && areSame(mapLocationFromCar2[1],0.));
+  
   const Eigen::Vector2d mapLocation3(-1.,-1.);
-  const Eigen::Vector2d mapLocationFromCar3=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation3);
+  const Eigen::Vector2d mapLocationFromCar3=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation3);
   assert(areSame(mapLocationFromCar3[0],3.) && (mapLocationFromCar3[1],2.));
+  
   const Eigen::Vector2d mapLocation4(1.,-1.);
-  const Eigen::Vector2d mapLocationFromCar4=transformMapToCar(mapToCarTransformation(carLocationOnMap, carRotation), mapLocation4);
+  const Eigen::Vector2d mapLocationFromCar4=affineTransformMapToCar(affineMapToCarTransformation(carLocationOnMap, carRotation), mapLocation4);
   assert(areSame(mapLocationFromCar4[0],1.) && areSame(mapLocationFromCar4[1],2.));
   return 0;
 }
@@ -492,32 +562,35 @@ const int runPolyfit() {
   
   const vector<double> globalPtsX_1 = {-93.05002,-107.7717,-123.3917,-134.97,-145.1165,-158.3417};
   const vector<double> globalPtsY_1 = {65.34102,50.57938,33.37102,18.404,4.339378,-17.42898};
-  const Eigen::VectorXd globalCoeffs1 = trimmedPolyfit(globalPtsX_1, globalPtsY_1, polynomialOrder);// polynomial fit for midline of road
-  cout << "globalCoeffs:" << globalCoeffs1.size() << ":" << std::endl << globalCoeffs1 << std::endl;
+  //const Eigen::VectorXd globalCoeffs1 = trimmedPolyfit(globalPtsX_1, globalPtsY_1, polynomialOrder);// polynomial fit for midline of road
+  const Eigen::VectorXd globalCoeffs1 = polyfit(globalPtsX_1, globalPtsY_1, polynomialOrder);// polynomial fit for midline of road cout << "globalCoeffs1:" << globalCoeffs1.size() << ":" << std::endl << globalCoeffs1 << std::endl;
   cout << std::endl;
   assert(globalCoeffs1.size()==(polynomialOrder+1));// 1 more than the polynomial order of 3
   assert(nonZeroCoefficients(globalCoeffs1)==polynomialOrder+1);
 
   const vector<double> globalPtsX_2 = {-107.7717,-123.3917,-134.97,-145.1165,-158.3417,-164.3164};
   const vector<double> globalPtsY_2 = {50.57938,33.37102,18.404,4.339378,-17.42898,-30.18062};
-  const Eigen::VectorXd globalCoeffs2 = trimmedPolyfit(globalPtsX_2, globalPtsY_2, polynomialOrder);// polynomial fit for midline of road
-  cout << "globalCoeffs:" << globalCoeffs2.size() << ":" << std::endl << globalCoeffs2 << std::endl;
+  //const Eigen::VectorXd globalCoeffs2 = trimmedPolyfit(globalPtsX_2, globalPtsY_2, polynomialOrder);// polynomial fit for midline of road
+  const Eigen::VectorXd globalCoeffs2 = polyfit(globalPtsX_2, globalPtsY_2, polynomialOrder);// polynomial fit for midline of road
+  cout << "globalCoeffs2:" << globalCoeffs2.size() << ":" << std::endl << globalCoeffs2 << std::endl;
   cout << std::endl;
   assert(globalCoeffs2.size()==(polynomialOrder+1));// 1 more than the polynomial order of 3
   assert(nonZeroCoefficients(globalCoeffs2)==polynomialOrder+1);
 
   const vector<double> globalPtsX_3 = {-169.3365,-175.4917,-176.9617,-176.8864,-175.0817,-170.3617};
   const vector<double> globalPtsY_3 = {-42.84062,-66.52898,-76.85062,-90.64063,-100.3206,-115.129};
-  const Eigen::VectorXd globalCoeffs3 = trimmedPolyfit(globalPtsX_3, globalPtsY_3, polynomialOrder);// polynomial fit for midline of road
-  cout << "globalCoeffs:" << globalCoeffs3.size() << ":" << std::endl << globalCoeffs3 << std::endl;
+  //const Eigen::VectorXd globalCoeffs3 = trimmedPolyfit(globalPtsX_3, globalPtsY_3, polynomialOrder);// polynomial fit for midline of road
+  const Eigen::VectorXd globalCoeffs3 = polyfit(globalPtsX_3, globalPtsY_3, polynomialOrder);// polynomial fit for midline of road
+  cout << "globalCoeffs3:" << globalCoeffs3.size() << ":" << std::endl << globalCoeffs3 << std::endl;
   cout << std::endl;
   assert(globalCoeffs3.size()==(polynomialOrder+1));// 1 more than the polynomial order of 3
-  assert(nonZeroCoefficients(globalCoeffs3)==3);// polnomial order is 2 -> 3 coefficients
+  //assert(nonZeroCoefficients(globalCoeffs3)==3);// polnomial order is 2 -> 3 coefficients
 
   const vector<double> globalPtsX_4 = {-176.9617,-176.8864,-175.0817,-170.3617,-164.4217,-158.9417};
   const vector<double> globalPtsY_4 = {-76.85062,-90.64063,-100.3206,-115.129,-124.5206,-131.399};
-  const Eigen::VectorXd globalCoeffs4 = trimmedPolyfit(globalPtsX_4, globalPtsY_4, polynomialOrder);// polynomial fit for midline of road
-  cout << "globalCoeffs:" << globalCoeffs4.size() << ":" << std::endl << globalCoeffs4 << std::endl;
+  //const Eigen::VectorXd globalCoeffs4 = trimmedPolyfit(globalPtsX_4, globalPtsY_4, polynomialOrder);// polynomial fit for midline of road
+  const Eigen::VectorXd globalCoeffs4 = polyfit(globalPtsX_4, globalPtsY_4, polynomialOrder);// polynomial fit for midline of road
+  cout << "globalCoeffs4:" << globalCoeffs4.size() << ":" << std::endl << globalCoeffs4 << std::endl;
   cout << std::endl;
   assert(globalCoeffs4.size()==(polynomialOrder+1));// 1 more than the polynomial order of 3
   assert(nonZeroCoefficients(globalCoeffs4)==polynomialOrder+1);
@@ -552,7 +625,9 @@ const int testMappingToCar() {
   return 0;
 }
 
-const bool RUNTESTS = true;
+const bool RUNTESTS = false;
+const int POLYFIT=3;
+const bool WITHLATENCY = true;
 
 int main() {
   
@@ -566,7 +641,7 @@ int main() {
 
   // MPC is initialized here!
   MPC mpc;
-
+  static double maxLoopTime=0.;
   h.onMessage([&mpc](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -577,6 +652,7 @@ int main() {
     if (sdata.size() > 2 && sdata[0] == '4' && sdata[1] == '2') {
       string s = hasData(sdata);
       if (s != "") {
+        timestamp_t t0 = get_timestamp();
         auto j = json::parse(s);
         string event = j[0].get<string>();
         if (event == "telemetry") {
@@ -594,12 +670,13 @@ int main() {
           * Both are in between [-1, 1].
           *
           */
-          const Eigen::VectorXd globalCoeffs = trimmedPolyfit(globalPtsX, globalPtsY, 3);// polynomial fit for midline of road
+          //const Eigen::VectorXd globalCoeffs = trimmedPolyfit(globalPtsX, globalPtsY, POLYFIT);// polynomial fit for midline of road
+          const Eigen::VectorXd globalCoeffs = polyfit(globalPtsX, globalPtsY, POLYFIT);// polynomial fit for midline of road
           cout << "globalCoeffs:" << globalCoeffs.size() << ":" << globalCoeffs << std::endl;
 
-          const double globalYDesired=polyeval(globalCoeffs, globalPx);
-          const double cte = globalYDesired-globalPy;// difference between current y and the path y at the current x
-          cout << "globalYDesired:" << globalYDesired << ", py:" << globalPy << ", cte:" << cte << std::endl;
+          const double globalYDesiredAtPx=polyeval(globalCoeffs, globalPx);
+          const double cte = globalYDesiredAtPx-globalPy;// difference between current y and the path y at the current x
+          cout << "globalYDesired:" << globalYDesiredAtPx << ", py:" << globalPy << ", cte:" << cte << std::endl;
           // TODO: calculate the orientation error
           //double epsi = ? ;
           // eψ(t+1)  =  ψ(t)−ψdes(t)+((v(t)/Lf)*δ(t)*dt)
@@ -611,29 +688,45 @@ int main() {
           //
           //      there should be only 2 coefficients for a 1 degree polynomial: c0 & c1
           //      therefore f'(t) should be just c1.
-          double psiDesiredCalculated = atan(globalCoeffs[1]+2.*globalCoeffs[2]*globalPx+3.*globalCoeffs[3]*pow(globalPx,2));
+          
+          //double psiDesiredCalculated = atan(globalCoeffs[1]+2.*globalCoeffs[2]*globalPx+3.*globalCoeffs[3]*pow(globalPx,2));
+          double psiDesiredCalculated = atan(globalCoeffs[1]+2.*globalCoeffs[2]*globalPx);
           const double globalPsiDesired = tangentialAngle(globalCoeffs, globalPx);
           cout << "globalPsiDesired:" << globalPsiDesired << ", psiDesiredCalculated:" << psiDesiredCalculated << std::endl;
-          assert(areSame(psiDesiredCalculated, globalPsiDesired));
+          if (POLYFIT==2) assert(areSame(psiDesiredCalculated, globalPsiDesired));
           const double epsi = globalPsi-globalPsiDesired;
           cout << "epsi:" << epsi << std::endl;
           
-          Eigen::VectorXd state(6);
-          state << globalPx,globalPy,globalPsi,v,cte,epsi;
-          const vector<double> globalSolution = mpc.Solve(state, globalCoeffs);
+          cout << "globalPsi:" << globalPsi << " = " << rad2deg(globalPsi) << " degrees, sine:" << sin(globalPsi) << ", cosine:" << cos(globalPsi) << std::endl;
 
-          const double sX = globalSolution[0];
-          const double sY = globalSolution[1];
-          const double sPsi = globalSolution[2];
-          const double sV = globalSolution[3];
-          const double sCte = globalSolution[4];
-          const double sEpsi = globalSolution[5];
-          double sSteerValue = globalSolution[6];
-          double sThrottleValue = globalSolution[7];
+          Eigen::VectorXd globalState(6);
+          globalState << globalPx,globalPy,globalPsi,v,cte,epsi;
+          //const vector<vector<double>> mpcSolution = mpc.Solve(globalState, globalCoeffs);
+          
+          Eigen::VectorXd localState(6);
+          localState << 0.,0.,0.,v,cte,epsi;
+          const vector<Eigen::Vector2d> xyCarSensorPath=transformMapToCar(globalPx, globalPy, -globalPsi, globalPtsX, globalPtsY);
+          const Eigen::VectorXd localCoeffs = polyfit(pullXCoordinate(xyCarSensorPath), pullYCoordinate(xyCarSensorPath), POLYFIT);// polynomial fit for midline of road
+          const vector<vector<double>> mpcSolution = mpc.Solve(localState, localCoeffs);
+
+
+          const vector<double> solutionState=mpcSolution[0];
+          const vector<double> solutionX=mpcSolution[1];
+          const vector<double> solutionY=mpcSolution[2];
+          assert(solutionX.size()==solutionY.size());
+
+          const double sX = solutionState[0];
+          const double sY = solutionState[1];
+          const double sPsi = solutionState[2];
+          const double sV = solutionState[3];
+          const double sCte = solutionState[4];
+          const double sEpsi = solutionState[5];
+          double sSteerValue = solutionState[6];
+          double sThrottleValue = solutionState[7];
           cout << "sSteerValue:" << sSteerValue << ", sThrottleValue:" << sThrottleValue << std::endl;
 
           const double steer_value=sSteerValue;
-          const double throttle_value=0.1;
+          const double throttle_value=sThrottleValue;
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
@@ -641,17 +734,15 @@ int main() {
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle_value;
 
-          cout << "globalPsi:" << globalPsi << " = " << rad2deg(globalPsi) << " degrees, sine:" << sin(globalPsi) << ", cosine:" << cos(globalPsi) << std::endl;
-          const vector<Eigen::Vector2d> nextXYCarValues=transformMapToCar(globalPx, globalPy, -globalPsi, globalPtsX, globalPtsY);
+
+          const vector<Eigen::Vector2d> xyCarPolyPath=polyFitPath(localCoeffs, 0., 10/*number of values*/, 5./*delta x*/);
 
           //Display the MPC predicted trajectory
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
           
-          mpc_x_vals.push_back(10.);mpc_x_vals.push_back(20.);mpc_x_vals.push_back(30.);mpc_x_vals.push_back(30.);
-          mpc_y_vals.push_back(0.1);mpc_y_vals.push_back(0.2);mpc_y_vals.push_back(0.3);mpc_y_vals.push_back(0.4);
-          //mpc_x_vals=pullXCoordinate(nextXYCarValues);
-          //mpc_y_vals=pullYCoordinate(nextXYCarValues);
+          mpc_x_vals=solutionX;
+          mpc_y_vals=solutionY;
           
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
@@ -663,8 +754,10 @@ int main() {
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          next_x_vals=pullXCoordinate(nextXYCarValues);
-          next_y_vals=pullYCoordinate(nextXYCarValues);
+          next_x_vals=pullXCoordinate(xyCarSensorPath);
+          next_y_vals=pullYCoordinate(xyCarSensorPath);
+          next_x_vals=pullXCoordinate(xyCarPolyPath);
+          next_y_vals=pullYCoordinate(xyCarPolyPath);
           cout << "next_x_vals:" << toString(next_x_vals) << std::endl;
           cout << "next_y_vals:" << toString(next_y_vals) << std::endl;
           //throw 122;
@@ -687,8 +780,16 @@ int main() {
           //
           // NOTE: REMEMBER TO SET THIS TO 100 MILLISECONDS BEFORE
           // SUBMITTING.
-          //this_thread::sleep_for(chrono::milliseconds(100));
+          if (WITHLATENCY)
+            this_thread::sleep_for(chrono::milliseconds(100));
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+          
+          timestamp_t t1 = get_timestamp();
+          double loopDeltaTime = (t1 - t0) / 1000000.0L;
+          maxLoopTime=std::max(maxLoopTime,loopDeltaTime);
+          //maxLoopTime=(maxLoopTime<loopDeltaTime)?loopDeltaTime:maxLoopTime;
+          cout << "loopDeltaTime:" << loopDeltaTime << ", maxLoopTime:" << maxLoopTime << std::endl;
+          t0=t1;
         }
       } else {
         // Manual driving
