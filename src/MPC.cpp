@@ -12,7 +12,7 @@ using CppAD::AD;
 //double dt = 0;
 const size_t N = 10; // long — in types.h:94
 const double dt = 0.1; //0.1 ;
-const double psiDesired = 0;
+
 
 // This value assumes the model presented in the classroom is used.
 //
@@ -25,7 +25,10 @@ const double psiDesired = 0;
 //
 // This is the length from front to CoG that has a similar radius.
 const double Lf = 2.67;
-double referenceVelocity = 40;
+const double velocityDesired = 50.;
+const double psiDesired = 0.;
+const double cteDesired = 0.;
+const double epsiDesired = 0.;
 
 
 // The solver takes all the state variables and actuator
@@ -89,7 +92,7 @@ class FG_eval {
       //const CppAD::AD<double> yPath = polyeval(coeffs, t);
       //cout << "yState[" << t << "]:" << yState << ", yPath[" << t << "]:" << yPath << std::endl;
       //cteCost += pow(yState-yPath, 2); // minimize path errors in y (cte predicted)
-      const CppAD::AD<double> cteError = vars[cte_start+t];
+      const CppAD::AD<double> cteError = vars[cte_start+t]-cteDesired;
       cteCost += CppAD::pow(cteError, 2); // minimize path errors in y (cte predicted)
     }
     
@@ -97,37 +100,43 @@ class FG_eval {
     for (int t = 0; t < N; t++) {
       const CppAD::AD<double> vState = vars[v_start+t];
       //cout << "vState[" << t << "]:" << vState << std::endl;
-      vCost += CppAD::pow(referenceVelocity-vState, 2); // minimize path errors in y (cte predicted)
+      vCost += CppAD::pow(vState-velocityDesired, 2); // minimize path errors in y (cte predicted)
     }
     
-    CppAD::AD<double> psiCost=0;
+    CppAD::AD<double> epsiCost=0;
     for (int t = 0; t < N; t++) {
-      const CppAD::AD<double> psiState = vars[psi_start+t];
+      const CppAD::AD<double> epsiState = vars[psi_start+t];
       //cout << "psiState[" << t << "]:" << psiState << std::endl;
-      const CppAD::AD<double> psiError=vars[epsi_start+t];
-      psiCost += CppAD::pow(psiError, 2); // minimize path errors in y (cte predicted)
+      const CppAD::AD<double> epsiError=vars[epsi_start+t]-epsiDesired;
+      epsiCost += CppAD::pow(epsiError, 2); // minimize path errors in y (cte predicted)
     }
     
-    CppAD::AD<double> daCost=0.;
+    CppAD::AD<double> controlSignalCost=0.;
     for (int t = 0; t < N-1; t++) {// control signals have one less entry
       //cost += pow(delta[t], 2) // minimize large control changes
-      daCost += CppAD::pow(vars[delta_start+t], 2); // minimize control changes
-      daCost += CppAD::pow(vars[a_start+t], 2); // minimize control changes
+      controlSignalCost += CppAD::pow(vars[delta_start+t], 2); // minimize control changes
+      controlSignalCost += CppAD::pow(vars[a_start+t], 2); // minimize control changes
     }
     
-    CppAD::AD<double> daDeltaCost=0.;
+    CppAD::AD<double> controlSignalDeltaCost=0.;
     //for (int t = 0; t < N-1; t++) {
     for (int t = 0; t < N-2; t++) {// indexes N+1
-      //cost += pow(delta[t+1] - delta[t], 2) // where control change between control steps
-      daDeltaCost += CppAD::pow(vars[delta_start+t+1] - vars[delta_start+t], 2); // where control change between control steps
+      controlSignalDeltaCost += CppAD::pow(vars[delta_start+t+1] - vars[delta_start+t], 2); // where control change between control steps
       //cost += pow(a[t+1] - a[t], 2)
-      daDeltaCost += CppAD::pow(vars[a_start+t+1] - vars[a_start+t], 2);
+      controlSignalDeltaCost += CppAD::pow(vars[a_start+t+1] - vars[a_start+t], 2);
     }
     
-    cout << "yCost:" << cteCost << ", psiCost:" << psiCost << ", dCost:" << daCost << ", daCost:" << daDeltaCost << ", vCost:" << vCost << std::endl;
+    //cout << "cteCost:" << cteCost << ", epsiCost:" << epsiCost << ", controlSignalCost:" << controlSignalCost << ", controlSignalDeltaCost:" << controlSignalDeltaCost << ", vCost:" << vCost << std::endl;
     //fg[0] = 0;
-    fg[0] = (500*cteCost)+psiCost+daCost+daDeltaCost+vCost;
-    cout << "total cost:" << fg[0] << std::endl;
+    
+    const double CTECOST=500.;
+    const double VCOST=1.;
+    const double EPSICOST=7000.;
+    const double CONTROLSIGNALCOST=5.;
+    const double CONTROLSIGNALDELTACOST=500.;
+    
+    fg[0] = (CTECOST*cteCost)+(EPSICOST*epsiCost)+(CONTROLSIGNALCOST*controlSignalCost)+(CONTROLSIGNALDELTACOST*controlSignalDeltaCost)+(VCOST*vCost);
+    cout << "total fg[0] cost:" << fg[0] << std::endl;
     
     // Reference State Cost
     // TODO: Define the cost related the reference state??? and

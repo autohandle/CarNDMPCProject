@@ -256,7 +256,7 @@ const double fPrimeOfX(const Eigen::VectorXd thePolynomialCoefficients, const do
     for (int c=2;c<numberOfCoefficients;c++) {
       valueAtX+=c*thePolynomialCoefficients[c]*pow(theValueX,c-1);
     }
-    cout << "fPrimeOfX-numberOfCoefficients:" << numberOfCoefficients << ", valueAtX:" << valueAtX << std::endl;
+    if (DEBUGPRINT) cout << "fPrimeOfX-numberOfCoefficients:" << numberOfCoefficients << ", valueAtX:" << valueAtX << std::endl;
     return valueAtX;
   } else {
     return 0.;
@@ -386,7 +386,7 @@ const vector<double> pullYCoordinate(vector<Eigen::Vector2d> thePoints) {
 }
 
 const vector<Eigen::Vector2d> polyFitPath(const Eigen::VectorXd theCoefficents, const double theInitialX, const int theNumberOfValues, const double theDeltaX) {
-  cout << "polyFitPath-theCoefficents:" << theCoefficents.matrix() << std::endl << "theInitialX:" << theInitialX << ", theDeltaX:" << theDeltaX << std::endl;
+  if (DEBUGPRINT) cout << "polyFitPath-theCoefficents:" << theCoefficents.matrix() << std::endl << "theInitialX:" << theInitialX << ", theDeltaX:" << theDeltaX << std::endl;
   vector<Eigen::Vector2d> xyValues;
   double x=theInitialX;
   for (int xy=0; xy<theNumberOfValues; xy++) {
@@ -395,6 +395,39 @@ const vector<Eigen::Vector2d> polyFitPath(const Eigen::VectorXd theCoefficents, 
     x+=theDeltaX;
   }
   return xyValues;
+}
+
+static vector<double> fixedSizeLoopTimeBuffer(3);
+static void addLoopTimeToBuffer(const double theLoopTime) {
+  if (fixedSizeLoopTimeBuffer.size()==fixedSizeLoopTimeBuffer.max_size()) // buffer is full?
+    fixedSizeLoopTimeBuffer.erase(fixedSizeLoopTimeBuffer.begin()+0); // erase 1st one
+  fixedSizeLoopTimeBuffer.push_back(theLoopTime);// put this one on the end
+}
+static double averageLoopTime() {
+  double totalLoopTime=0;
+  for (int loop=0; loop<fixedSizeLoopTimeBuffer.size(); loop++) {
+    totalLoopTime+=fixedSizeLoopTimeBuffer[loop];
+  }
+  return totalLoopTime/fixedSizeLoopTimeBuffer.size();
+}
+
+static vector<double> fixedSizeLoopVelocityBuffer(6);
+static void addVelocityToBuffer(const double theVelocity) {
+  if (fixedSizeLoopVelocityBuffer.size()==fixedSizeLoopVelocityBuffer.max_size()) // buffer is full?
+    fixedSizeLoopVelocityBuffer.erase(fixedSizeLoopVelocityBuffer.begin()+0); // erase 1st one
+  fixedSizeLoopVelocityBuffer.push_back(theVelocity);// put this one on the end
+}
+static double averageAcceleration() {
+  double acceration=0;
+  if (fixedSizeLoopVelocityBuffer.size()>1) {// need 2 velocities to calculate acceleration
+    double totalAcceleration=0.;
+    for (int loop=1; loop<fixedSizeLoopVelocityBuffer.size(); loop++) {
+      const double deltaV=fixedSizeLoopVelocityBuffer[loop]-fixedSizeLoopVelocityBuffer[loop-1];
+      totalAcceleration+=deltaV;
+    }
+    acceration=totalAcceleration/fixedSizeLoopVelocityBuffer.size();
+  }
+  return acceration;
 }
 
 const int testCarSameAsMap() {
@@ -635,7 +668,6 @@ int main() {
     testMappingToCar();
     return 0;
   }
-  std::cout << "mapToCarTransform:" << matrixMapToCarTransformation(-40., 108., 3.733).matrix() << std::endl;
   
   uWS::Hub h;
 
@@ -672,11 +704,11 @@ int main() {
           */
           //const Eigen::VectorXd globalCoeffs = trimmedPolyfit(globalPtsX, globalPtsY, POLYFIT);// polynomial fit for midline of road
           const Eigen::VectorXd globalCoeffs = polyfit(globalPtsX, globalPtsY, POLYFIT);// polynomial fit for midline of road
-          cout << "globalCoeffs:" << globalCoeffs.size() << ":" << globalCoeffs << std::endl;
+          if (DEBUGPRINT) cout << "globalCoeffs:" << globalCoeffs.size() << ":" << globalCoeffs << std::endl;
 
           const double globalYDesiredAtPx=polyeval(globalCoeffs, globalPx);
           const double cte = globalYDesiredAtPx-globalPy;// difference between current y and the path y at the current x
-          cout << "globalYDesired:" << globalYDesiredAtPx << ", py:" << globalPy << ", cte:" << cte << std::endl;
+          if (DEBUGPRINT) cout << "globalYDesired:" << globalYDesiredAtPx << ", py:" << globalPy << ", cte:" << cte << std::endl;
           // TODO: calculate the orientation error
           //double epsi = ? ;
           // eψ(t+1)  =  ψ(t)−ψdes(t)+((v(t)/Lf)*δ(t)*dt)
@@ -692,21 +724,54 @@ int main() {
           //double psiDesiredCalculated = atan(globalCoeffs[1]+2.*globalCoeffs[2]*globalPx+3.*globalCoeffs[3]*pow(globalPx,2));
           double psiDesiredCalculated = atan(globalCoeffs[1]+2.*globalCoeffs[2]*globalPx);
           const double globalPsiDesired = tangentialAngle(globalCoeffs, globalPx);
-          cout << "globalPsiDesired:" << globalPsiDesired << ", psiDesiredCalculated:" << psiDesiredCalculated << std::endl;
+          if (DEBUGPRINT) cout << "globalPsiDesired:" << globalPsiDesired << ", psiDesiredCalculated:" << psiDesiredCalculated << std::endl;
           if (POLYFIT==2) assert(areSame(psiDesiredCalculated, globalPsiDesired));
           const double epsi = globalPsi-globalPsiDesired;
-          cout << "epsi:" << epsi << std::endl;
+          if (DEBUGPRINT) cout << "epsi:" << epsi << std::endl;
           
-          cout << "globalPsi:" << globalPsi << " = " << rad2deg(globalPsi) << " degrees, sine:" << sin(globalPsi) << ", cosine:" << cos(globalPsi) << std::endl;
+          if (DEBUGPRINT) cout << "globalPsi:" << globalPsi << " = " << rad2deg(globalPsi) << " degrees, sine:" << sin(globalPsi) << ", cosine:" << cos(globalPsi) << std::endl;
 
           Eigen::VectorXd globalState(6);
           globalState << globalPx,globalPy,globalPsi,v,cte,epsi;
           //const vector<vector<double>> mpcSolution = mpc.Solve(globalState, globalCoeffs);
           
-          Eigen::VectorXd localState(6);
-          localState << 0.,0.,0.,v,cte,epsi;
+          const double localX=0.;
+          const double localY=0.;
+          const double localPsi=0.;
+          
           const vector<Eigen::Vector2d> xyCarSensorPath=transformMapToCar(globalPx, globalPy, -globalPsi, globalPtsX, globalPtsY);
           const Eigen::VectorXd localCoeffs = polyfit(pullXCoordinate(xyCarSensorPath), pullYCoordinate(xyCarSensorPath), POLYFIT);// polynomial fit for midline of road
+          
+          const double v0 = v;
+          addVelocityToBuffer(v);
+          const double a0=averageAcceleration();
+          
+          const double localPsi0 = localPsi;
+          
+          const double dt=averageLoopTime();
+          // fg[1 + x_start + t] = x1 - (x0 + v0 * CppAD::cos(psi0) * dt);
+          const double localX0 = 0;
+          const double localX1 = localX0+v0*cos(localPsi0)*dt;// car will continue in the local x direction, cos(0)=1
+          // fg[1 + y_start + t] = y1 - (y0 + v0 * CppAD::sin(psi0) * dt);
+          const double localY0 = 0;
+          const double localY1 = localY0+v0*sin(localPsi0)*dt;// car will continue in the local x direction, sin(0)=0
+          // fg[1 + psi_start + t] = psi1-(psi0-(v0/Lf)*delta0*dt);
+          const double Lf = 2.67;
+          const double delta0 = j[1]["steering_angle"];
+          const double localPsi1 = localPsi0-(v0/Lf)*delta0*dt;// car will continue in the localPsi=0;
+          // fg[1 + v_start + t] = v1-(v0+a0*dt);
+          const double v1 = v0+a0*dt;
+          // fg[1 + cte_start + t] = cte1-(cte0 + v0*CppAD::sin(epsi0)*dt);
+          const double localCte0 = polyeval(localCoeffs, localX0);
+          const double localEpsi0 = tangentialAngle(localCoeffs, localX0);
+          const double localCte1 = localCte0+v0*sin(localEpsi0)*dt;
+          // fg[1 + epsi_start + t] = epsi1-(psiError + (v0/Lf)*delta0*dt);
+          const double localEps1 = localEpsi0+(v0/Lf)*delta0*dt;
+          
+          Eigen::VectorXd localState(6);
+          //localState << localX,localY,localPsi,v,cte,epsi;
+          localState << localX1,localY1,localPsi1,v1,localCte1,localEps1;
+
           const vector<vector<double>> mpcSolution = mpc.Solve(localState, localCoeffs);
 
 
@@ -723,6 +788,7 @@ int main() {
           const double sEpsi = solutionState[5];
           double sSteerValue = solutionState[6];
           double sThrottleValue = solutionState[7];
+          
           cout << "sSteerValue:" << sSteerValue << ", sThrottleValue:" << sThrottleValue << std::endl;
 
           const double steer_value=sSteerValue;
@@ -731,7 +797,7 @@ int main() {
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
           // Otherwise the values will be in between [-deg2rad(25), deg2rad(25] instead of [-1, 1].
-          msgJson["steering_angle"] = steer_value;
+          msgJson["steering_angle"] = steer_value/(deg2rad(25) * Lf);
           msgJson["throttle"] = throttle_value;
 
 
@@ -758,9 +824,6 @@ int main() {
           next_y_vals=pullYCoordinate(xyCarSensorPath);
           next_x_vals=pullXCoordinate(xyCarPolyPath);
           next_y_vals=pullYCoordinate(xyCarPolyPath);
-          cout << "next_x_vals:" << toString(next_x_vals) << std::endl;
-          cout << "next_y_vals:" << toString(next_y_vals) << std::endl;
-          //throw 122;
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
@@ -787,8 +850,9 @@ int main() {
           timestamp_t t1 = get_timestamp();
           double loopDeltaTime = (t1 - t0) / 1000000.0L;
           maxLoopTime=std::max(maxLoopTime,loopDeltaTime);
+          addLoopTimeToBuffer(loopDeltaTime);
           //maxLoopTime=(maxLoopTime<loopDeltaTime)?loopDeltaTime:maxLoopTime;
-          cout << "loopDeltaTime:" << loopDeltaTime << ", maxLoopTime:" << maxLoopTime << std::endl;
+          cout << "loopDeltaTime:" << loopDeltaTime << ", maxLoopTime:" << maxLoopTime << ", avgLoopTime:" << averageLoopTime() << std::endl;
           t0=t1;
         }
       } else {
