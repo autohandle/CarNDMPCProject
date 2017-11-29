@@ -659,7 +659,7 @@ const int testMappingToCar() {
 }
 
 const bool RUNTESTS = false;
-const int POLYFIT=2;
+const int POLYFIT=3;
 const bool WITHLATENCY = true;
 const bool CLOSEPREDICTEDPATHGAP=true;
 

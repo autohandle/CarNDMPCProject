@@ -25,7 +25,7 @@ const double dt = 0.1; //0.1 ;
 //
 // This is the length from front to CoG that has a similar radius.
 const double Lf = 2.67;
-const double velocityDesired = 60.;
+const double velocityDesired = 50.;
 const double cteDesired = 0.;
 const double epsiDesired = 0.;
 
