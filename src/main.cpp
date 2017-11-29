@@ -385,7 +385,7 @@ const vector<double> pullYCoordinate(vector<Eigen::Vector2d> thePoints) {
   return pullCoordinate(thePoints,1);
 }
 
-const vector<Eigen::Vector2d> polyFitPath(const Eigen::VectorXd theCoefficents, const double theInitialX, const int theNumberOfValues, const double theDeltaX) {
+const vector<Eigen::Vector2d> polyEvalPath(const Eigen::VectorXd theCoefficents, const double theInitialX, const int theNumberOfValues, const double theDeltaX) {
   if (DEBUGPRINT) cout << "polyFitPath-theCoefficents:" << theCoefficents.matrix() << std::endl << "theInitialX:" << theInitialX << ", theDeltaX:" << theDeltaX << std::endl;
   vector<Eigen::Vector2d> xyValues;
   double x=theInitialX;
@@ -659,8 +659,9 @@ const int testMappingToCar() {
 }
 
 const bool RUNTESTS = false;
-const int POLYFIT=3;
+const int POLYFIT=2;
 const bool WITHLATENCY = true;
+const bool CLOSEPREDICTEDPATHGAP=true;
 
 int main() {
   
@@ -721,11 +722,17 @@ int main() {
           //      there should be only 2 coefficients for a 1 degree polynomial: c0 & c1
           //      therefore f'(t) should be just c1.
           
-          //double psiDesiredCalculated = atan(globalCoeffs[1]+2.*globalCoeffs[2]*globalPx+3.*globalCoeffs[3]*pow(globalPx,2));
-          double psiDesiredCalculated = atan(globalCoeffs[1]+2.*globalCoeffs[2]*globalPx);
           const double globalPsiDesired = tangentialAngle(globalCoeffs, globalPx);
-          if (DEBUGPRINT) cout << "globalPsiDesired:" << globalPsiDesired << ", psiDesiredCalculated:" << psiDesiredCalculated << std::endl;
-          if (POLYFIT==2) assert(areSame(psiDesiredCalculated, globalPsiDesired));
+          if (POLYFIT==3) {// check derivative
+            double psiDesiredCalculated = atan(globalCoeffs[1]+2.*globalCoeffs[2]*globalPx+3.*globalCoeffs[3]*pow(globalPx,2));
+            if (DEBUGPRINT) cout << "globalPsiDesired:" << globalPsiDesired << ", psiDesiredCalculated:" << psiDesiredCalculated << std::endl;
+            assert(areSame(psiDesiredCalculated, globalPsiDesired));
+          }
+          if (POLYFIT==2) {// check derivative
+            double psiDesiredCalculated = atan(globalCoeffs[1]+2.*globalCoeffs[2]*globalPx);
+            if (DEBUGPRINT) cout << "globalPsiDesired:" << globalPsiDesired << ", psiDesiredCalculated:" << psiDesiredCalculated << std::endl;
+            assert(areSame(psiDesiredCalculated, globalPsiDesired));
+          }
           const double epsi = globalPsi-globalPsiDesired;
           if (DEBUGPRINT) cout << "epsi:" << epsi << std::endl;
           
@@ -801,7 +808,6 @@ int main() {
           msgJson["throttle"] = throttle_value;
 
 
-          const vector<Eigen::Vector2d> xyCarPolyPath=polyFitPath(localCoeffs, 0., 10/*number of values*/, 5./*delta x*/);
 
           //Display the MPC predicted trajectory
           vector<double> mpc_x_vals;
@@ -809,6 +815,10 @@ int main() {
           
           mpc_x_vals=solutionX;
           mpc_y_vals=solutionY;
+          if (CLOSEPREDICTEDPATHGAP) {
+            mpc_x_vals.insert(mpc_x_vals.begin()+0, localX1);
+            mpc_y_vals.insert(mpc_y_vals.begin()+0, localY1);
+          }
           
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
@@ -820,10 +830,13 @@ int main() {
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          next_x_vals=pullXCoordinate(xyCarSensorPath);
-          next_y_vals=pullYCoordinate(xyCarSensorPath);
-          next_x_vals=pullXCoordinate(xyCarPolyPath);
-          next_y_vals=pullYCoordinate(xyCarPolyPath);
+          // for no latency
+          //next_x_vals=pullXCoordinate(xyCarSensorPath);
+          //next_y_vals=pullYCoordinate(xyCarSensorPath);
+          
+          const vector<Eigen::Vector2d> xyCarPolySensorPath=polyEvalPath(localCoeffs/* from sensor path */, 0., 10/*number of values*/, 5./*delta x*/);
+          next_x_vals=pullXCoordinate(xyCarPolySensorPath);
+          next_y_vals=pullYCoordinate(xyCarPolySensorPath);
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
