@@ -180,7 +180,7 @@ The nonlinear optimization model has 2 parts: [the constraints](https://github.c
 
 ###### The Constraints
 
-[The constraints](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L144-L214) consist of 3 parts: the equations of motion,
+[The constraints](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L144-L214) consist of 3 parts: [the equations of motion](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L163-L213),
 ``` C++
 AD<double> x1 = vars[x_start + t];
 
@@ -323,23 +323,138 @@ The cost weights were determined by trial and error.
 
 ###### The Actuators
 
-###### The Update Equations.
+There are two actuators: the steering angle, `delta`, and the acceleration, `a`. The actuators appear in:
+
+[the costs](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L88-L138)
+
+``` C++
+controlSignalCost += CppAD::pow(vars[delta_start+t], 2); // minimize control changes
+controlSignalCost += CppAD::pow(vars[a_start+t], 2); // minimize control changes
+
+controlSignalDeltaCost += CppAD::pow(vars[delta_start+t+1] - vars[delta_start+t], 2);
+controlSignalDeltaCost += CppAD::pow(vars[a_start+t+1] - vars[a_start+t], 2);
+```
+
+[the constraints](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L144-L214)
+
+``` C++
+for (int i = 0; i < delta_start; i++) {
+  vars_lowerbound[i] = -1.0e19;
+  vars_upperbound[i] = 1.0e19;
+}
+
+// The upper and lower limits of delta are set to -25 and 25
+// degrees (values in radians).
+// NOTE: Feel free to change this to something else.
+for (int i = delta_start; i < a_start; i++) {
+  vars_lowerbound[i] = -0.436332;
+  vars_upperbound[i] = 0.436332;
+}
+```
+
+and in the [equations of motion](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L163-L213)
+
+``` C++
+// ψ(t+1)=ψ(t)+v(t)/Lf*δ(t)*dt
+const AD<double> psi1 = vars[psi_start + t];
+//const AD<double> psi0 = vars[psi_start + t - 1];
+const AD<double> delta0 = vars[delta_start + t -1];
+//fg[1 + psi_start + t] = psi1-(psi0+v0/Lf*d0*dt);
+fg[1 + psi_start + t] = psi1-(psi0-(v0/Lf)*delta0*dt);// project notes tips & tricks: δ is positive rotating counter clockwise
+
+
+// v(t+1) = v(t)+a(t)*dt
+const AD<double> v1 = vars[v_start + t];
+const AD<double> a0 = vars[a_start + t - 1];
+fg[1 + v_start + t] = v1-(v0+a0*dt);
+```
+
+###### [The Update Equations](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L354-L376).
+
+The initial value of both the minimized state variables and actuators are collected into a vector:
+
+``` C++
+  const vector<double> solutionState = {
+    /*0*/ solution.x[x_start + 1],
+    /*1*/ solution.x[y_start + 1],
+    /*2*/ solution.x[psi_start + 1],
+    /*3*/ solution.x[v_start + 1],
+    /*4*/ solution.x[cte_start + 1],
+    /*5*/ solution.x[epsi_start + 1],
+    /*6*/ solution.x[delta_start],
+    /*7*/ solution.x[a_start]};
+```
+
+as well as, all of the x and y values predicted by the equations of motion:
+
+``` C++
+vector<double> solutionX;
+vector<double> solutionY;
+for (int x=0; x<N-1; x++) {
+  solutionX.push_back(solution.x[x_start+x+1]);
+  solutionY.push_back(solution.x[y_start+x+1]);
+}
+```
+
+The three vectors are returned in a single vector to the calling program:
+
+``` C++
+  return { solutionState, solutionX, solutionY};
+```
+
+In the [main program](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/main.cpp#L782-L861), the three vectors are unpacked:
+
+``` C++
+const vector<vector<double>> mpcSolution = mpc.Solve(localState, localCoeffs);
+const vector<double> solutionState=mpcSolution[0];
+const vector<double> solutionX=mpcSolution[1];
+const vector<double> solutionY=mpcSolution[2];
+
+const double sX = solutionState[0];
+const double sY = solutionState[1];
+const double sPsi = solutionState[2];
+const double sV = solutionState[3];
+const double sCte = solutionState[4];
+const double sEpsi = solutionState[5];
+double sSteerValue = solutionState[6];
+double sThrottleValue = solutionState[7];
+```
+
+and adjusted:
+
+``` C++
+msgJson["steering_angle"] = steer_value/(deg2rad(25) * Lf);
+msgJson["throttle"] = throttle_value;
+```
+
+before being sent to the simulator:
+
+``` C++
+const bool WITHLATENCY = true;
+
+if (WITHLATENCY)
+  this_thread::sleep_for(chrono::milliseconds(100));
+ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+```
 
 ##### Timestep Length and Elapsed Duration (N & dt)
 
+The optimization of the steering and throttle runs forward over a [1 second interval](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L10-L14) (10*.1=1 second):
+
+``` C++
+const size_t N = 10; // long — in types.h:94
+const double dt = 0.1; //0.1 ;
+```
 
 #### Simulation - successfully drive a lap around the track
 
 The video of the car with the parameters in the checked-in code:
-[third order polynomial](https://s3.amazonaws.com/autohandle.com/video/CarNDMPCProject_Polyfit3.mp4)
-[second order polnomial](https://s3.amazonaws.com/autohandle.com/video/CarNDMPCProject_Polyfit2.mp4)
 
-Too late in the project, I discovered that a negative throttle would apply the brakes, so I changed the clamp for the throttle to vary from -1 to +1
-<br>
-![-1 to +1 Logistic Function](./images/1Minus2xAbsLogFuncAt095.png)
-<br>
-Thr car is now a bit more aggresive and skids around the first turn after the bridge with the brakes on:
-[Braking PID Controller](https://s3.amazonaws.com/autohandle.com/video/CarNDPIDControlProjectBraking.mp4)
+[third order polynomial](https://s3.amazonaws.com/autohandle.com/video/CarNDMPCProject_Polyfit3.mp4)
+
+I also ran the the car with a second order polynomial fit:
+
+[second order polynomial](https://s3.amazonaws.com/autohandle.com/video/CarNDMPCProject_Polyfit2.mp4)
 
 
 The video was created by using a [screen recording tool](http://www.idownloadblog.com/2016/02/26/how-to-record-part-of-mac-screen-quicktime/).
