@@ -1,108 +1,461 @@
-# CarND-Controls-MPC
-Self-Driving Car Engineer Nanodegree Program
+# Model Predictive Control (MPC)
 
----
+#### Compiling
+##### Code must compile without errors with cmake and make.
 
-## Dependencies
+``` shell
+Softwares-MacBook-Pro:tmp david$ git clone http://github.com/autohandle/CarNDMPCProject.git
+Cloning into 'CarNDMPCProject'...
+warning: redirecting to https://github.com/autohandle/CarNDMPCProject.git/
+remote: Counting objects: 1982, done.
+remote: Compressing objects: 100% (1469/1469), done.
+remote: Total 1982 (delta 457), reused 1982 (delta 457), pack-reused 0
+Receiving objects: 100% (1982/1982), 2.52 MiB | 2.69 MiB/s, done.
+Resolving deltas: 100% (457/457), done.
+Softwares-MacBook-Pro:tmp david$ cd CarNDMPCProject/
+Softwares-MacBook-Pro:CarNDMPCProject david$ mkdir build
+Softwares-MacBook-Pro:CarNDMPCProject david$ cd build
+Softwares-MacBook-Pro:build david$ cmake ..
+-- The C compiler identification is AppleClang 9.0.0.9000037
+-- The CXX compiler identification is AppleClang 9.0.0.9000037
+-- Check for working C compiler: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/cc
+-- Check for working C compiler: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/cc -- works
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Check for working CXX compiler: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++
+-- Check for working CXX compiler: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ -- works
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /tmp/CarNDMPCProject/build
+Softwares-MacBook-Pro:build david$ make
+Scanning dependencies of target mpc
+[ 33%] Building CXX object CMakeFiles/mpc.dir/src/MPC.cpp.o
+/tmp/CarNDMPCProject/src/MPC.cpp:229:10: warning: unused variable 'i' [-Wunused-variable]
+  size_t i;
+         ^
+/tmp/CarNDMPCProject/src/MPC.cpp:29:14: warning: unused variable 'psiDesired' [-Wunused-const-variable]
+const double psiDesired = 0.;
+             ^
+2 warnings generated.
+[ 66%] Building CXX object CMakeFiles/mpc.dir/src/main.cpp.o
+/tmp/CarNDMPCProject/src/main.cpp:786:24: warning: unused variable 'sV' [-Wunused-variable]
+          const double sV = solutionState[3];
+                       ^
+/tmp/CarNDMPCProject/src/main.cpp:738:24: warning: unused variable 'localX' [-Wunused-variable]
+          const double localX=0.;
+                       ^
+/tmp/CarNDMPCProject/src/main.cpp:739:24: warning: unused variable 'localY' [-Wunused-variable]
+          const double localY=0.;
+                       ^
+/tmp/CarNDMPCProject/src/main.cpp:785:24: warning: unused variable 'sPsi' [-Wunused-variable]
+          const double sPsi = solutionState[2];
+                       ^
+/tmp/CarNDMPCProject/src/main.cpp:784:24: warning: unused variable 'sY' [-Wunused-variable]
+          const double sY = solutionState[1];
+                       ^
+/tmp/CarNDMPCProject/src/main.cpp:787:24: warning: unused variable 'sCte' [-Wunused-variable]
+          const double sCte = solutionState[4];
+                       ^
+/tmp/CarNDMPCProject/src/main.cpp:783:24: warning: unused variable 'sX' [-Wunused-variable]
+          const double sX = solutionState[0];
+                       ^
+/tmp/CarNDMPCProject/src/main.cpp:788:24: warning: unused variable 'sEpsi' [-Wunused-variable]
+          const double sEpsi = solutionState[5];
+                       ^
+8 warnings generated.
+[100%] Linking CXX executable mpc
+ld: warning: directory not found for option '-L/usr/local/Cellar/libuv/1*/lib'
+[100%] Built target mpc
+Softwares-MacBook-Pro:build david$ ls
+CMakeCache.txt    CMakeFiles    Makefile    cmake_install.cmake mpc
+Softwares-MacBook-Pro:build david$ ./mpc
+Listening to port 4567
+^C
+Softwares-MacBook-Pro:build david$
+```
 
-* cmake >= 3.5
- * All OSes: [click here for installation instructions](https://cmake.org/install/)
-* make >= 4.1(mac, linux), 3.81(Windows)
-  * Linux: make is installed by default on most Linux distros
-  * Mac: [install Xcode command line tools to get make](https://developer.apple.com/xcode/features/)
-  * Windows: [Click here for installation instructions](http://gnuwin32.sourceforge.net/packages/make.htm)
-* gcc/g++ >= 5.4
-  * Linux: gcc / g++ is installed by default on most Linux distros
-  * Mac: same deal as make - [install Xcode command line tools]((https://developer.apple.com/xcode/features/)
-  * Windows: recommend using [MinGW](http://www.mingw.org/)
-* [uWebSockets](https://github.com/uWebSockets/uWebSockets)
-  * Run either `install-mac.sh` or `install-ubuntu.sh`.
-  * If you install from source, checkout to commit `e94b6e1`, i.e.
-    ```
-    git clone https://github.com/uWebSockets/uWebSockets
-    cd uWebSockets
-    git checkout e94b6e1
-    ```
-    Some function signatures have changed in v0.14.x. See [this PR](https://github.com/udacity/CarND-MPC-Project/pull/3) for more details.
+#### Implementation
+##### Polynomial Fitting and MPC Preprocessing
 
-* **Ipopt and CppAD:** Please refer to [this document](https://github.com/udacity/CarND-MPC-Project/blob/master/install_Ipopt_CppAD.md) for installation instructions.
-* [Eigen](http://eigen.tuxfamily.org/index.php?title=Main_Page). This is already part of the repo so you shouldn't have to worry about it.
-* Simulator. You can download these from the [releases tab](https://github.com/udacity/self-driving-car-sim/releases).
-* Not a dependency but read the [DATA.md](./DATA.md) for a description of the data sent back from the simulator.
+The state for each iteration is obtained from the sensor telemetry data transmitted by the simulator, e.g.
+
+```
+42["telemetry",{
+"ptsx":[-93.05002,-107.7717,-123.3917,-134.97,-145.1165,-158.3417],
+"ptsy":[65.34102,50.57938,33.37102,18.404,4.339378,-17.42898],
+"psi_unity":3.957497,"psi":3.896485,
+"x":-93.00126,"y":65.01852,
+"steering_angle":-0.00553279,"throttle":0.1,"speed":10.52398}]
+```
+
+The sensor telemetry data is [pulled from the json packet](https://github.com/autohandle/CarNDMPCProject/blob/4e954c12caf3172bb16529301f37b68dd96015e6/src/main.cpp#L692-L697)
+
+```  C++
+vector<double> globalPtsX = j[1]["ptsx"];
+vector<double> globalPtsY = j[1]["ptsy"];
+double globalPx = j[1]["x"];
+double globalPy = j[1]["y"];
+double globalPsi = j[1]["psi"];
+double v = j[1]["speed"];
+```
+
+The waypoints `globalPtsX` and the `globalPtsY` from the simulator sensor data were [transformed to car coordinates](https://github.com/autohandle/CarNDMPCProject/blob/4e954c12caf3172bb16529301f37b68dd96015e6/src/main.cpp#L742-L743)
+``` C++
+const vector<Eigen::Vector2d> xyCarSensorPath=transformMapToCar(globalPx, globalPy, -globalPsi, globalPtsX, globalPtsY);
+```
+
+by using an [affine transformation](https://github.com/autohandle/CarNDMPCProject/blob/4e954c12caf3172bb16529301f37b68dd96015e6/src/main.cpp#L270-L283) consisting of a rotation followed by a translation:
+
+``` C++
+const Eigen::Affine2d translateToOrigin(Eigen::Translation<double,2>(-theCarMapPositionX,-theCarMapPositionY));
+const Eigen::Affine2d rotation((Eigen::Rotation2D<double>(theCarMapRotation)));
+```
+The transformed waypoints were then [fitted to a polynomial](https://github.com/autohandle/CarNDMPCProject/blob/4e954c12caf3172bb16529301f37b68dd96015e6/src/main.cpp#L742-L743)
+
+``` 
+const Eigen::VectorXd localCoeffs = polyfit(pullXCoordinate(xyCarSensorPath), pullYCoordinate(xyCarSensorPath), POLYFIT);// polynomial fit for midline of road
+```
+
+##### Model Predictive Control with Latency
+
+The velocity from the car sensor data, `v`, is [collected in a fixed length buffer](https://github.com/autohandle/CarNDMPCProject/blob/4e954c12caf3172bb16529301f37b68dd96015e6/src/main.cpp#L414-L431)
+
+```
+addVelocityToBuffer(v);
+const double a0=averageAcceleration();
+```
+
+and the velocity deltas between iterations are use to [get the average car acceleration](https://github.com/autohandle/CarNDMPCProject/blob/4e954c12caf3172bb16529301f37b68dd96015e6/src/main.cpp#L414-L431).
+In the same way, the average amount of time for the last few iterations is [tracked](https://github.com/autohandle/CarNDMPCProject/blob/4e954c12caf3172bb16529301f37b68dd96015e6/src/main.cpp#L400-L412)
+and used to determine how much time will pass before the car receives a control signal:
+
+```
+const double dt=averageLoopTime();
+```
+
+In my case and on my computer, this value was around .12 seconds: .1 seconds of imposed delay and an additional .02 seconds of calculation delay.
+
+With the accleration, `a0`, the iteration time, `dt`, and the polynomial coefficients fitted to the waypoints, `localCoeffs`; the same state model used in the optimizer could be use to [calculate the initial state](https://github.com/autohandle/CarNDMPCProject/blob/4e954c12caf3172bb16529301f37b68dd96015e6/src/main.cpp#L738-L775) of the car at time `dt` in the future
+
+``` C++
+const double localPsi=0.;
+const double localPsi0 = localPsi;
+// fg[1 + x_start + t] = x1 - (x0 + v0 * CppAD::cos(psi0) * dt);
+const double localX0 = 0;
+const double localX1 = localX0+v0*cos(localPsi0)*dt;// car will continue in the local x direction, cos(0)=1
+// fg[1 + y_start + t] = y1 - (y0 + v0 * CppAD::sin(psi0) * dt);
+const double localY0 = 0;
+const double localY1 = localY0+v0*sin(localPsi0)*dt;// car will continue in the local x direction, sin(0)=0
+// fg[1 + psi_start + t] = psi1-(psi0-(v0/Lf)*delta0*dt);
+const double Lf = 2.67;
+const double delta0 = j[1]["steering_angle"];
+const double localPsi1 = localPsi0-(v0/Lf)*delta0*dt;// car will continue in the localPsi=0;
+// fg[1 + v_start + t] = v1-(v0+a0*dt);
+const double v1 = v0+a0*dt;
+// fg[1 + cte_start + t] = cte1-(cte0 + v0*CppAD::sin(epsi0)*dt);
+const double localCte0 = polyeval(localCoeffs, localX0);
+const double localEpsi0 = tangentialAngle(localCoeffs, localX0);
+const double localCte1 = localCte0+v0*sin(localEpsi0)*dt;
+// fg[1 + epsi_start + t] = epsi1-(psiError + (v0/Lf)*delta0*dt);
+const double localEps1 = localEpsi0+(v0/Lf)*delta0*dt;
+```
+
+The state values at `dt` are stored in a state vector, `localState` and [passed to MPC](https://github.com/autohandle/CarNDMPCProject/blob/4e954c12caf3172bb16529301f37b68dd96015e6/src/main.cpp#L738-L775) to solve the nonlinear optimization problem:
+
+``` C++
+Eigen::VectorXd localState(6);
+localState << localX1,localY1,localPsi1,v1,localCte1,localEps1;
+const vector<vector<double>> mpcSolution = mpc.Solve(localState, localCoeffs);
+```
+
+##### The Model
+
+The nonlinear optimization model has 2 parts: [the constraints](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L144-L214) and [the costs](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L88-L138) (to be minimized)
+
+###### The Constraints
+
+[The constraints](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L144-L214) consist of 3 parts: [the equations of motion](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L163-L213),
+``` C++
+AD<double> x1 = vars[x_start + t];
+
+AD<double> x0 = vars[x_start + t - 1];
+AD<double> psi0 = vars[psi_start + t - 1];
+AD<double> v0 = vars[v_start + t - 1];
+
+fg[1 + x_start + t] = x1 - (x0 + v0 * CppAD::cos(psi0) * dt);
+
+// y(t+1)=y(t)+v(t)*sin(phi(t))*dt
+const AD<double> y1 = vars[y_start + t];
+const AD<double> y0 = vars[y_start + t - 1];
+fg[1 + y_start + t] = y1 - (y0 + v0 * CppAD::sin(psi0) * dt);
+
+// ψ(t+1)=ψ(t)+v(t)/Lf*δ(t)*dt
+const AD<double> psi1 = vars[psi_start + t];
+//const AD<double> psi0 = vars[psi_start + t - 1];
+const AD<double> delta0 = vars[delta_start + t -1];
+//fg[1 + psi_start + t] = psi1-(psi0+v0/Lf*d0*dt);
+fg[1 + psi_start + t] = psi1-(psi0-(v0/Lf)*delta0*dt);// project notes tips & tricks: δ is positive rotating counter clockwise
+
+// v(t+1) = v(t)+a(t)*dt
+const AD<double> v1 = vars[v_start + t];
+const AD<double> a0 = vars[a_start + t - 1];
+fg[1 + v_start + t] = v1-(v0+a0*dt);
+
+// cte(t+1) = f(x(t)) - y(t) + v(t)*sin(eψ(t))*dt
+// cte(t+1) = cte(t)         + v(t)*sin(eψ(t))*dt
+// eψ(t)=ψ(t)−ψdes(t)
+const AD<double> cte1 = vars[cte_start + t];
+const AD<double> epsi0 = vars[epsi_start + t - 1];
+//const AD<double> cte0 = vars[cte_start + t - 1];
+const AD<double> cte0 = fOfX(coeffs, x0)-y0;
+fg[1 + cte_start + t] = cte1-(cte0 + v0*CppAD::sin(epsi0)*dt);
+
+// eψ(t+1)=eψ(t)+(v(t)/Lf)*δ(t)*dt
+// eψ(t)=ψ(t)−ψdes(t)
+const AD<double> epsi1 = vars[epsi_start + t];
+const AD<double> psiDesiredAtX0 = tangentialAngle(coeffs, x0);
+const AD<double> psiError = psi0-psiDesiredAtX0;
+fg[1 + epsi_start + t] = epsi1-(psiError + (v0/Lf)*delta0*dt);
+```
+
+the [bounds on the state variables](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L288-L302),
+``` C++
+// Acceleration/decceleration upper and lower limits.
+for (int i = a_start; i < n_vars; i++) {
+  vars_lowerbound[i] = -1.0;
+  vars_upperbound[i] = 1.0;
+}
+
+// Lower and upper limits for the constraints
+// Should be 0 besides initial state.
+Dvector constraints_lowerbound(n_constraints);
+Dvector constraints_upperbound(n_constraints);
+for (int i = 0; i < n_constraints; i++) {
+  constraints_lowerbound[i] = 0;
+  constraints_upperbound[i] = 0;
+}
+```
+
+and the [initial values](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L304-L316) of the [state variables](https://github.com/autohandle/CarNDMPCProject/blob/4e954c12caf3172bb16529301f37b68dd96015e6/src/main.cpp#L738-L775) passed into [MPC::Solve](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L225-L377)
+
+``` C++
+const double x = state[0];
+const double y = state[1];
+const double psi = state[2];
+const double v = state[3];
+const double cte = state[4];
+const double epsi = state[5];
+
+constraints_lowerbound[x_start] = x;
+constraints_lowerbound[y_start] = y;
+constraints_lowerbound[psi_start] = psi;
+constraints_lowerbound[v_start] = v;
+constraints_lowerbound[cte_start] = cte;
+constraints_lowerbound[epsi_start] = epsi;
+
+constraints_upperbound[x_start] = x;
+constraints_upperbound[y_start] = y;
+constraints_upperbound[psi_start] = psi;
+constraints_upperbound[v_start] = v;
+constraints_upperbound[cte_start] = cte;
+constraints_upperbound[epsi_start] = epsi;
+```
+
+###### The Costs
+
+[The Costs](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L88-L138) to be minimized consist of:
+
+the desired cross track error,
+
+``` C++
+const CppAD::AD<double> cteError = vars[cte_start+t]-cteDesired;
+cteCost += CppAD::pow(cteError, 2); // minimize path errors in y (cte predicted)
+```
+
+the desired velocity
+
+```C++
+const CppAD::AD<double> vState = vars[v_start+t];
+vCost += CppAD::pow(vState-velocityDesired, 2);
+```
+
+the desired orientation
+
+```C++
+const CppAD::AD<double> epsiState = vars[psi_start+t];
+const CppAD::AD<double> epsiError=vars[epsi_start+t]-epsiDesired;
+epsiCost += CppAD::pow(epsiError, 2);
+```
+
+the use of steering and acceleration
+
+``` C++
+controlSignalCost += CppAD::pow(vars[delta_start+t], 2); // minimize control changes
+controlSignalCost += CppAD::pow(vars[a_start+t], 2); // minimize control changes
+```
+
+the size of the control change
+
+``` C++
+controlSignalDeltaCost += CppAD::pow(vars[delta_start+t+1] - vars[delta_start+t], 2);
+controlSignalDeltaCost += CppAD::pow(vars[a_start+t+1] - vars[a_start+t], 2);
+```
+
+All of the cost components were weighted and combined
+
+``` C++
+const double CTECOST=500.;
+const double VCOST=1.;
+const double EPSICOST=7000.;
+const double CONTROLSIGNALCOST=5.;
+const double CONTROLSIGNALDELTACOST=500.;
+
+fg[0] = (CTECOST*cteCost)+(EPSICOST*epsiCost)+(CONTROLSIGNALCOST*controlSignalCost)+(CONTROLSIGNALDELTACOST*controlSignalDeltaCost)+(VCOST*vCost);
+```
+
+The cost weights were determined by trial and error.
+
+###### The Actuators
+
+There are two actuators: the steering angle, `delta`, and the acceleration, `a`. The actuators appear in:
+
+[the costs](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L88-L138)
+
+``` C++
+controlSignalCost += CppAD::pow(vars[delta_start+t], 2); // minimize control changes
+controlSignalCost += CppAD::pow(vars[a_start+t], 2); // minimize control changes
+
+controlSignalDeltaCost += CppAD::pow(vars[delta_start+t+1] - vars[delta_start+t], 2);
+controlSignalDeltaCost += CppAD::pow(vars[a_start+t+1] - vars[a_start+t], 2);
+```
+
+[the constraints](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L144-L214)
+
+``` C++
+for (int i = 0; i < delta_start; i++) {
+  vars_lowerbound[i] = -1.0e19;
+  vars_upperbound[i] = 1.0e19;
+}
+
+// The upper and lower limits of delta are set to -25 and 25
+// degrees (values in radians).
+// NOTE: Feel free to change this to something else.
+for (int i = delta_start; i < a_start; i++) {
+  vars_lowerbound[i] = -0.436332;
+  vars_upperbound[i] = 0.436332;
+}
+```
+
+and in the [equations of motion](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L163-L213)
+
+``` C++
+// ψ(t+1)=ψ(t)+v(t)/Lf*δ(t)*dt
+const AD<double> psi1 = vars[psi_start + t];
+//const AD<double> psi0 = vars[psi_start + t - 1];
+const AD<double> delta0 = vars[delta_start + t -1];
+//fg[1 + psi_start + t] = psi1-(psi0+v0/Lf*d0*dt);
+fg[1 + psi_start + t] = psi1-(psi0-(v0/Lf)*delta0*dt);// project notes tips & tricks: δ is positive rotating counter clockwise
 
 
-## Basic Build Instructions
+// v(t+1) = v(t)+a(t)*dt
+const AD<double> v1 = vars[v_start + t];
+const AD<double> a0 = vars[a_start + t - 1];
+fg[1 + v_start + t] = v1-(v0+a0*dt);
+```
 
-1. Clone this repo.
-2. Make a build directory: `mkdir build && cd build`
-3. Compile: `cmake .. && make`
-4. Run it: `./mpc`.
+###### [The Update Equations](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L354-L376).
 
-## Tips
+The initial value of both the minimized state variables and actuators are collected into a vector:
 
-1. It's recommended to test the MPC on basic examples to see if your implementation behaves as desired. One possible example
-is the vehicle starting offset of a straight line (reference). If the MPC implementation is correct, after some number of timesteps
-(not too many) it should find and track the reference line.
-2. The `lake_track_waypoints.csv` file has the waypoints of the lake track. You could use this to fit polynomials and points and see of how well your model tracks curve. NOTE: This file might be not completely in sync with the simulator so your solution should NOT depend on it.
-3. For visualization this C++ [matplotlib wrapper](https://github.com/lava/matplotlib-cpp) could be helpful.)
-4.  Tips for setting up your environment are available [here](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/0949fca6-b379-42af-a919-ee50aa304e6a/lessons/f758c44c-5e40-4e01-93b5-1a82aa4e044f/concepts/23d376c7-0195-4276-bdf0-e02f1f3c665d)
-5. **VM Latency:** Some students have reported differences in behavior using VM's ostensibly a result of latency.  Please let us know if issues arise as a result of a VM environment.
+``` C++
+  const vector<double> solutionState = {
+    /*0*/ solution.x[x_start + 1],
+    /*1*/ solution.x[y_start + 1],
+    /*2*/ solution.x[psi_start + 1],
+    /*3*/ solution.x[v_start + 1],
+    /*4*/ solution.x[cte_start + 1],
+    /*5*/ solution.x[epsi_start + 1],
+    /*6*/ solution.x[delta_start],
+    /*7*/ solution.x[a_start]};
+```
 
-## Editor Settings
+as well as, all of the x and y values predicted by the equations of motion:
 
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
+``` C++
+vector<double> solutionX;
+vector<double> solutionY;
+for (int x=0; x<N-1; x++) {
+  solutionX.push_back(solution.x[x_start+x+1]);
+  solutionY.push_back(solution.x[y_start+x+1]);
+}
+```
 
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
+The three vectors are returned in a single vector to the calling program:
 
-## Code Style
+``` C++
+  return { solutionState, solutionX, solutionY};
+```
 
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
+In the [main program](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/main.cpp#L782-L861), the three vectors are unpacked:
 
-## Project Instructions and Rubric
+``` C++
+const vector<vector<double>> mpcSolution = mpc.Solve(localState, localCoeffs);
+const vector<double> solutionState=mpcSolution[0];
+const vector<double> solutionX=mpcSolution[1];
+const vector<double> solutionY=mpcSolution[2];
 
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
+const double sX = solutionState[0];
+const double sY = solutionState[1];
+const double sPsi = solutionState[2];
+const double sV = solutionState[3];
+const double sCte = solutionState[4];
+const double sEpsi = solutionState[5];
+double sSteerValue = solutionState[6];
+double sThrottleValue = solutionState[7];
+```
 
-More information is only accessible by people who are already enrolled in Term 2
-of CarND. If you are enrolled, see [the project page](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/f1820894-8322-4bb3-81aa-b26b3c6dcbaf/lessons/b1ff3be0-c904-438e-aad3-2b5379f0e0c3/concepts/1a2255a0-e23c-44cf-8d41-39b8a3c8264a)
-for instructions and the project rubric.
+and adjusted:
 
-## Hints!
+``` C++
+msgJson["steering_angle"] = steer_value/(deg2rad(25) * Lf);
+msgJson["throttle"] = throttle_value;
+```
 
-* You don't have to follow this directory structure, but if you do, your work
-  will span all of the .cpp files here. Keep an eye out for TODOs.
+before being sent to the simulator:
 
-## Call for IDE Profiles Pull Requests
+``` C++
+const bool WITHLATENCY = true;
 
-Help your fellow students!
+if (WITHLATENCY)
+  this_thread::sleep_for(chrono::milliseconds(100));
+ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+```
 
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to we ensure
-that students don't feel pressured to use one IDE or another.
+##### Timestep Length and Elapsed Duration (N & dt)
 
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
+The optimization of the steering and throttle runs forward over a [1 second interval](https://github.com/autohandle/CarNDMPCProject/blob/def705e76b0e3c370ba75dac1220d152f887586b/src/MPC.cpp#L10-L14) (10*.1=1 second):
 
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
+``` C++
+const size_t N = 10; // long — in types.h:94
+const double dt = 0.1; //0.1 ;
+```
 
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
+#### Simulation - successfully drive a lap around the track
 
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
+The video of the car with the parameters in the checked-in code:
 
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
+[third order polynomial](https://s3.amazonaws.com/autohandle.com/video/CarNDMPCProject_Polyfit3.mp4)
 
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
+I also ran the the car with a second order polynomial fit:
+
+[second order polynomial](https://s3.amazonaws.com/autohandle.com/video/CarNDMPCProject_Polyfit2.mp4)
+
+
+The video was created by using a [screen recording tool](http://www.idownloadblog.com/2016/02/26/how-to-record-part-of-mac-screen-quicktime/).
+
